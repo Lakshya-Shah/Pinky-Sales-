@@ -2503,16 +2503,12 @@ function Login({ onLogin }) {
 
 function PageWrapper({ children, activeKey }) {
   return (
-    <motion.div
+    <div
       key={activeKey}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="w-full flex flex-col justify-start items-stretch"
+      className="page-wrapper w-full flex flex-col justify-start items-stretch"
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -3707,11 +3703,6 @@ function App() {
 
   const loadTab = async (tab = active, currentShop = shopId) => {
     if (!session) return;
-    if (tab === 'shops' && data.shops.length) {
-      tabLoadSequenceRef.current += 1;
-      setTabLoading(false);
-      return;
-    }
     const requestId = ++tabLoadSequenceRef.current;
     setTabLoading(true);
     try {
@@ -3721,8 +3712,14 @@ function App() {
       const dashboardScoped = dashboardShopId ? `?shopId=${dashboardShopId}` : '';
       const set = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
       if (tab === 'dashboard') set('dashboard', await authedFetch(`/dashboard${dashboardScoped}`));
-      if (tab === 'shops') set('shops', await authedFetch('/shops'));
-      if (tab === 'shopkeepers') set('shopkeepers', await authedFetch('/shopkeepers'));
+      if (tab === 'shops') {
+        const shopsRes = await authedFetch('/shops');
+        set('shops', Array.isArray(shopsRes) ? shopsRes : (shopsRes?.data || []));
+      }
+      if (tab === 'shopkeepers') {
+        const skRes = await authedFetch('/shopkeepers');
+        set('shopkeepers', Array.isArray(skRes) ? skRes : (skRes?.data || []));
+      }
       if (tab === 'models') {
         if (role === 'customer') set('catalog', await api('/catalog'));
         else await loadProductPage({ tab, page: 1, currentShop });
@@ -7169,7 +7166,8 @@ function App() {
 
   const shopkeeperQuery = normalizedText(deferredShopkeeperSearch);
   const visibleShopkeepers = useMemo(() => {
-    return data.shopkeepers.filter((user) => {
+    const list = Array.isArray(data.shopkeepers) ? data.shopkeepers : [];
+    return list.filter((user) => {
       if (!shopkeeperQuery) return true;
       return [user.name, user.username, user.contact, user.shop_name]
         .filter(Boolean)
@@ -7178,11 +7176,13 @@ function App() {
   }, [data.shopkeepers, shopkeeperQuery]);
 
   const staffedBranchCount = useMemo(() => {
-    return new Set(data.shopkeepers.map((user) => String(user.shop_id || '')).filter(Boolean)).size;
+    const list = Array.isArray(data.shopkeepers) ? data.shopkeepers : [];
+    return new Set(list.map((user) => String(user.shop_id || '')).filter(Boolean)).size;
   }, [data.shopkeepers]);
 
   const incompleteShopkeeperContacts = useMemo(() => {
-    return data.shopkeepers.filter((user) => !String(user.contact || '').trim()).length;
+    const list = Array.isArray(data.shopkeepers) ? data.shopkeepers : [];
+    return list.filter((user) => !String(user.contact || '').trim()).length;
   }, [data.shopkeepers]);
 
   const visibleCatalog = useMemo(() => {
@@ -7614,7 +7614,7 @@ function App() {
         {loadError && !loading && <div className="error">{loadError}</div>}
 
         <React.Suspense fallback={<div className="p-8"><SmartSkeletonWrapper type="card" count={4} /></div>}>
-        <AnimatePresence mode="wait">
+        <AnimatePresence initial={false}>
           {active === 'dashboard' && data.dashboard && (
             <PageWrapper activeKey="dashboard" key="dashboard">
               <RedesignedDashboard
@@ -7661,13 +7661,13 @@ function App() {
             <PageWrapper activeKey="shops" key="shops">
               <section className="space">
                 <FormPanel title="Add branch" action="Add shop" onSubmit={() => post('/shops', 'shop', 'Shop created')}>
-                  <Input label="Shop name" className="md:col-span-2" value={forms.shop.name} onChange={(v) => setForms({ ...forms, shop: { ...forms.shop, name: v } })} />
-                  <Input label="Area" className="md:col-span-2" value={forms.shop.area} onChange={(v) => setForms({ ...forms, shop: { ...forms.shop, area: v } })} />
-                  <Input label="Address" className="md:col-span-2" value={forms.shop.address} onChange={(v) => setForms({ ...forms, shop: { ...forms.shop, address: v } })} />
-                  <Input label="Phone" className="md:col-span-2" value={forms.shop.phone} onChange={(v) => setForms({ ...forms, shop: { ...forms.shop, phone: v } })} />
+                  <Input label="Shop name" className="md:col-span-2" value={forms?.shop?.name || ''} onChange={(v) => setForms({ ...forms, shop: { ...(forms?.shop || {}), name: v } })} />
+                  <Input label="Area" className="md:col-span-2" value={forms?.shop?.area || ''} onChange={(v) => setForms({ ...forms, shop: { ...(forms?.shop || {}), area: v } })} />
+                  <Input label="Address" className="md:col-span-2" value={forms?.shop?.address || ''} onChange={(v) => setForms({ ...forms, shop: { ...(forms?.shop || {}), address: v } })} />
+                  <Input label="Phone" className="md:col-span-2" value={forms?.shop?.phone || ''} onChange={(v) => setForms({ ...forms, shop: { ...(forms?.shop || {}), phone: v } })} />
                 </FormPanel>
                 <CardGrid 
-                  items={data.shops} 
+                  items={data?.shops || []} 
                   onItemClick={role === 'superadmin' ? viewShopDetails : null}
                   render={(shop) => (
                     <>
@@ -7701,21 +7701,23 @@ function App() {
 
           {active === 'shopkeepers' && (
             <PageWrapper activeKey="shopkeepers" key="shopkeepers">
-              <ShopkeeperLoginsPage
-                data={data}
-                forms={forms}
-                setForms={setForms}
-                staffedBranchCount={staffedBranchCount}
-                incompleteShopkeeperContacts={incompleteShopkeeperContacts}
-                saving={saving}
-                submitShopkeeper={submitShopkeeper}
-                deleteShopkeeper={deleteShopkeeper}
-                openShopkeeperEditor={openShopkeeperEditor}
-                shopkeeperSearch={shopkeeperSearch}
-                setShopkeeperSearch={setShopkeeperSearch}
-                visibleShopkeepers={visibleShopkeepers}
-                Empty={Empty}
-              />
+              <React.Suspense fallback={<div className="p-8"><SmartSkeletonWrapper type="card" count={3} /></div>}>
+                <ShopkeeperLoginsPage
+                  data={data}
+                  forms={forms}
+                  setForms={setForms}
+                  staffedBranchCount={staffedBranchCount}
+                  incompleteShopkeeperContacts={incompleteShopkeeperContacts}
+                  saving={saving}
+                  submitShopkeeper={submitShopkeeper}
+                  deleteShopkeeper={deleteShopkeeper}
+                  openShopkeeperEditor={openShopkeeperEditor}
+                  shopkeeperSearch={shopkeeperSearch}
+                  setShopkeeperSearch={setShopkeeperSearch}
+                  visibleShopkeepers={visibleShopkeepers}
+                  Empty={Empty}
+                />
+              </React.Suspense>
             </PageWrapper>
           )}
 
@@ -10743,14 +10745,14 @@ function Select({ label, value, onChange, options = [], placeholder = 'Select', 
   );
 }
 
-function CardGrid({ items, render, className = '', onItemClick, emptyTitle = 'No records yet' }) {
+function CardGrid({ items = [], render, className = '', onItemClick, emptyTitle = 'No records yet' }) {
+  const safeItems = Array.isArray(items) ? items : [];
   return (
     <div className={`card-grid ${className}`}>
-      {items.map((item, index) => (
+      {safeItems.map((item, index) => (
         <motion.article 
           initial={{ opacity: 0, y: 15 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-30px" }}
+          animate={{ opacity: 1, y: 0 }}
           whileHover={{ y: -4, scale: 1.012 }}
           whileTap={{ scale: 0.995 }}
           transition={{ 
@@ -10766,7 +10768,7 @@ function CardGrid({ items, render, className = '', onItemClick, emptyTitle = 'No
           {render(item)}
         </motion.article>
       ))}
-      {!items.length && <Empty title={emptyTitle} />}
+      {!safeItems.length && <Empty title={emptyTitle} />}
     </div>
   );
 }
