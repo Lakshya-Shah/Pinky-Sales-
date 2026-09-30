@@ -2865,19 +2865,38 @@ app.put(['/api/products/:id', '/products/:id'], authenticateToken, requireShopSt
   }
 });
 
-app.delete('/api/products/:id', authenticateToken, requireShopStaff, async (req, res) => {
+app.delete(['/api/products/:id', '/products/:id'], authenticateToken, requireShopStaff, async (req, res) => {
   try {
     const product = await getRecord('SELECT id, name, short_name, image_url, image_urls FROM products WHERE id = ?', [req.params.id]);
     if (!product) return res.status(404).json({ error: 'Product not found.' });
 
-    const history = await getRecord(
-      `SELECT
-        (SELECT COUNT(*) FROM sales WHERE product_id = ?) AS sale_count,
-        (SELECT COUNT(*) FROM stock_requests WHERE product_id = ?) AS request_count,
-        (SELECT COUNT(*) FROM stock_transfers WHERE product_id = ?) AS transfer_count`,
-      [req.params.id, req.params.id, req.params.id]
-    );
-    const historyCount = Number(history?.sale_count || 0) + Number(history?.request_count || 0) + Number(history?.transfer_count || 0);
+    let historyCount = 0;
+    try {
+      const history = await getRecord(
+        `SELECT
+          (SELECT COUNT(*) FROM sales WHERE product_id = ?) AS legacy_sale_count,
+          (SELECT COUNT(*) FROM sale_items WHERE product_id = ?) AS sale_item_count,
+          (SELECT COUNT(*) FROM stock_requests WHERE product_id = ?) AS legacy_request_count,
+          (SELECT COUNT(*) FROM stock_request_items WHERE product_id = ?) AS request_item_count,
+          (SELECT COUNT(*) FROM stock_transfers WHERE product_id = ?) AS transfer_count,
+          (SELECT COUNT(*) FROM sales_returns WHERE product_id = ?) AS return_count,
+          (SELECT COUNT(*) FROM purchase_bill_items WHERE product_id = ?) AS purchase_count,
+          (SELECT COUNT(*) FROM debit_note_items WHERE product_id = ?) AS debit_count,
+          (SELECT COUNT(*) FROM sale_batch_allocations sba JOIN inventory_batches ib ON ib.id = sba.batch_id WHERE ib.product_id = ?) AS allocation_count`,
+        [req.params.id, req.params.id, req.params.id, req.params.id, req.params.id, req.params.id, req.params.id, req.params.id, req.params.id]
+      );
+      historyCount = Object.values(history || {}).reduce((sum, val) => sum + Number(val || 0), 0);
+    } catch (err) {
+      console.warn('[Products] Advanced history check warning, falling back to basic check:', err.message);
+      const basic = await getRecord(
+        `SELECT
+          (SELECT COUNT(*) FROM sales WHERE product_id = ?) AS sale_count,
+          (SELECT COUNT(*) FROM stock_requests WHERE product_id = ?) AS request_count,
+          (SELECT COUNT(*) FROM stock_transfers WHERE product_id = ?) AS transfer_count`,
+        [req.params.id, req.params.id, req.params.id]
+      );
+      historyCount = Number(basic?.sale_count || 0) + Number(basic?.request_count || 0) + Number(basic?.transfer_count || 0);
+    }
     
     // Soft delete / archive product if it has sales, request, or transfer history
     if (historyCount > 0) {
@@ -2886,32 +2905,44 @@ app.delete('/api/products/:id', authenticateToken, requireShopStaff, async (req,
       return res.json({ success: true, archived: true });
     }
 
-    // Clean up product image(s) from Cloudflare R2 bucket
-    if (product.image_url) {
-      deleteImageFromR2(product.image_url).catch((err) => console.warn('[R2 Delete Image Warning]', err.message));
-    }
-    if (product.image_urls) {
-      let urls = [];
-      try {
-        urls = typeof product.image_urls === 'string' ? JSON.parse(product.image_urls) : product.image_urls;
-      } catch {}
-      if (Array.isArray(urls)) {
-        urls.forEach((u) => {
-          const urlStr = typeof u === 'string' ? u : u?.url;
-          if (urlStr && urlStr !== product.image_url) {
-            deleteImageFromR2(urlStr).catch((err) => console.warn('[R2 Delete Gallery Image Warning]', err.message));
-          }
-        });
-      }
-    }
+    try {
+      await runTransaction(async (tx) => {
+        await tx.runQuery('DELETE FROM inventory_batches WHERE product_id = ?', [req.params.id]);
+        await tx.runQuery('DELETE FROM stock WHERE product_id = ?', [req.params.id]);
+        await tx.runQuery('DELETE FROM products WHERE id = ?', [req.params.id]);
+      });
 
-    await runTransaction(async (tx) => {
-      await tx.runQuery('DELETE FROM inventory_batches WHERE product_id = ?', [req.params.id]);
-      await tx.runQuery('DELETE FROM stock WHERE product_id = ?', [req.params.id]);
-      await tx.runQuery('DELETE FROM products WHERE id = ?', [req.params.id]);
-    });
-    await audit(req, 'Deleted product and inventory', 'product', req.params.id, product.short_name || product.name);
-    res.json({ success: true });
+      // Clean up product image(s) from Cloudflare R2 bucket only after successful hard delete
+      if (product.image_url) {
+        deleteImageFromR2(product.image_url).catch((err) => console.warn('[R2 Delete Image Warning]', err.message));
+      }
+      if (product.image_urls) {
+        let urls = [];
+        try {
+          urls = typeof product.image_urls === 'string' ? JSON.parse(product.image_urls) : product.image_urls;
+        } catch {}
+        if (Array.isArray(urls)) {
+          urls.forEach((u) => {
+            const urlStr = typeof u === 'string' ? u : u?.url;
+            if (urlStr && urlStr !== product.image_url) {
+              deleteImageFromR2(urlStr).catch((err) => console.warn('[R2 Delete Gallery Image Warning]', err.message));
+            }
+          });
+        }
+      }
+
+      await audit(req, 'Deleted product and inventory', 'product', req.params.id, product.short_name || product.name);
+      return res.json({ success: true });
+    } catch (txError) {
+      // If foreign key constraint or any reference prevents hard deletion, gracefully soft delete instead of failing with 500
+      if (txError.code === '23503' || String(txError.message || '').includes('violates foreign key constraint')) {
+        console.warn(`[Products] Hard delete blocked by foreign key constraint for product ${req.params.id}. Gracefully soft deleting.`);
+        await runQuery('UPDATE products SET is_active = 0 WHERE id = ?', [req.params.id]);
+        await audit(req, 'Soft deleted product (archived due to foreign key constraints)', 'product', req.params.id, product.short_name || product.name);
+        return res.json({ success: true, archived: true });
+      }
+      throw txError;
+    }
   } catch (error) {
     console.error('[Products] Delete failed:', error);
     res.status(500).json({ error: 'Unable to delete this product right now.' });

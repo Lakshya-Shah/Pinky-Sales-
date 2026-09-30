@@ -2833,6 +2833,8 @@ function App() {
   const [pendingFilters, setPendingFilters] = useState({ search: '', date: '' });
   const [globalSearch, setGlobalSearch] = useState('');
   const [globalSearchFocused, setGlobalSearchFocused] = useState(false);
+  const [remoteProducts, setRemoteProducts] = useState([]);
+  const [isSearchingProducts, setIsSearchingProducts] = useState(false);
   const [searchHydrated, setSearchHydrated] = useState(false);
   const [salesFilters, setSalesFilters] = useState({ search: '', date: '' });
   const [shopkeeperSearch, setShopkeeperSearch] = useState('');
@@ -3274,12 +3276,6 @@ function App() {
       const nextQuery = productName(result.item);
       setModelSearch('');
       setPriceSearch(nextQuery);
-      if (role === 'customer') {
-        setCatalogFilters((prev) => ({ ...prev, search: '' }));
-        setActivePage('catalog');
-      } else {
-        setActivePage('models');
-      }
       setSelectedProductDetails(result.item);
       return;
     }
@@ -3940,6 +3936,33 @@ function App() {
     }, activeProductSearch ? 350 : 0);
     return () => clearTimeout(timer);
   }, [active, activeProductSearch, selectedShop, productPager.page, productPager.limit, session?.token, authReady]);
+
+  // Live remote product search for dashboard command center so ANY model in database is searchable
+  useEffect(() => {
+    const q = globalSearch.trim();
+    if (!q || !token) {
+      setRemoteProducts([]);
+      setIsSearchingProducts(false);
+      return;
+    }
+    setIsSearchingProducts(true);
+    const timer = setTimeout(async () => {
+      try {
+        const scoped = shopId ? `&shopId=${encodeURIComponent(shopId)}` : '';
+        const endpoint = role === 'customer'
+          ? `/catalog?search=${encodeURIComponent(q)}&limit=30`
+          : `/products?search=${encodeURIComponent(q)}&limit=30${scoped}`;
+        const res = role === 'customer' ? await api(endpoint) : await authedFetch(endpoint);
+        const rows = getPaginatedRows(res);
+        setRemoteProducts(Array.isArray(rows) ? rows : []);
+      } catch (err) {
+        console.warn('Dashboard product search failed:', err);
+      } finally {
+        setIsSearchingProducts(false);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [globalSearch, token, shopId, role]);
 
   const initialStockFilterMountedRef = useRef(false);
   const initialShopMountedRef = useRef(false);
@@ -7309,7 +7332,7 @@ function App() {
 
     // 1. Products (model, short_name, manufacturing brand, general brand, category, sub_category, price, wholesale_price, colours)
     const productsById = new Map();
-    [...dashboardAvailability, ...(role === 'customer' ? data.catalog : data.products)].forEach((item) => {
+    [...dashboardAvailability, ...(role === 'customer' ? data.catalog : data.products), ...remoteProducts].forEach((item) => {
       if (!item?.id) return;
       productsById.set(String(item.id), { ...productsById.get(String(item.id)), ...item });
     });
@@ -7334,12 +7357,13 @@ function App() {
           cleanBrand ? `Brand: ${cleanBrand}` : '',
           item.sale_price || item.selling_price ? currency(item.sale_price || item.selling_price) : '',
           item.category,
-          item.available_locations || (item.quantity !== undefined ? `${item.quantity} in stock` : '')
+          item.available_locations || (item.quantity !== undefined || item.stock_quantity !== undefined ? `${item.quantity ?? item.stock_quantity ?? 0} in stock` : '')
         ], 'Model details'),
         icon: Smartphone,
         item,
       }, [
         pName,
+        item.name,
         item.model,
         models,
         item.short_name,
@@ -7386,33 +7410,26 @@ function App() {
       }, [customer.name, customer.mobile, customer.address, customer.shop_name, customer.gstin, customer.customer_type, customer.pending]);
     });
 
-    // 4. Sales / Invoices
-    (data.sales || []).forEach((sale) => {
-      const invNo = sale.invoice_number || (sale.id ? `INV-${String(sale.id).padStart(6, '0')}` : '');
-      const sBrand = sale.manufacturing_brand_name || sale.brand || '';
-      addResult({
-        kind: 'sale',
-        type: 'Invoice / Sale',
-        title: `${invNo ? `${invNo} · ` : ''}${sale.customer_name || 'Walk-in customer'}`,
-        meta: joinUniqueText([productName(sale), sBrand, sale.shop_name, sale.payment_mode, currency(sale.total_amount)], 'Sale record'),
-        icon: ReceiptText,
-        item: sale,
-      }, [
-        invNo,
-        sale.customer_name,
-        sale.mobile,
-        productName(sale),
-        sale.product_name,
-        sBrand,
-        sale.category,
-        sale.shop_name,
-        sale.payment_mode,
-        sale.total_amount,
-        sale.paid_amount,
-        sale.due_date,
-        sale.invoice_date
-      ]);
-    });
+    // 4. Sales / Invoices - ONLY match when explicitly searching for an invoice (e.g. starts with "INV" or an invoice ID)
+    // NEVER match on product model names, so model searches never show sales invoices instead of models!
+    const isExplicitInvoiceQuery = globalQueryTokens.some((t) => t.startsWith('inv') || /^inv[-_]?\d+/i.test(t));
+    if (isExplicitInvoiceQuery) {
+      (data.sales || []).forEach((sale) => {
+        const invNo = sale.invoice_number || (sale.id ? `INV-${String(sale.id).padStart(6, '0')}` : '');
+        addResult({
+          kind: 'sale',
+          type: 'Invoice / Sale',
+          title: `${invNo ? `${invNo} · ` : ''}${sale.customer_name || 'Walk-in customer'}`,
+          meta: joinUniqueText([sale.shop_name, sale.payment_mode, currency(sale.total_amount)], 'Sale record'),
+          icon: ReceiptText,
+          item: sale,
+        }, [
+          invNo,
+          String(sale.id || ''),
+          sale.invoice_number
+        ]);
+      });
+    }
 
     // 5. Shops & Branches
     (data.shops || []).forEach((shop) => {
@@ -7427,7 +7444,7 @@ function App() {
     });
 
     return results;
-  }, [globalQueryTokens, dashboardAvailability, role, data.catalog, data.products, data.reference?.brands, data.reference?.manufacturing_brands, data.customers, data.sales, data.shops]);
+  }, [globalQueryTokens, dashboardAvailability, remoteProducts, role, data.catalog, data.products, data.reference?.brands, data.reference?.manufacturing_brands, data.customers, data.sales, data.shops]);
 
   // Zero-Storage Dynamic View Link Route (Publicly Accessible without Auth)
   const isInvoiceViewRoute = typeof window !== 'undefined' && (
@@ -7642,6 +7659,7 @@ function App() {
                 handleGlobalSearchSelect={handleGlobalSearchSelect}
                 hydrateGlobalSearch={hydrateGlobalSearch}
                 closeGlobalSearch={closeGlobalSearch}
+                isSearchingProducts={isSearchingProducts}
               />
             </PageWrapper>
           )}

@@ -44,7 +44,8 @@ import {
   EyeOff,
   Search,
   X,
-  Smartphone
+  Smartphone,
+  Loader2
 } from 'lucide-react';
 
 // Animated Number Counter Helper
@@ -545,6 +546,7 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
   handleGlobalSearchSelect = () => {},
   hydrateGlobalSearch = () => {},
   closeGlobalSearch = () => {},
+  isSearchingProducts = false,
 }) {
   const [timeframe, setTimeframe] = useState('Today');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -609,12 +611,16 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
       {/* 0. PROMINENT FULL-WIDTH GLOBAL SEARCH BAR */}
       <section className="relative z-30 w-full" onBlur={closeGlobalSearch}>
         <div className="relative flex items-center bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-sm hover:shadow-md focus-within:shadow-xl focus-within:border-teal-500 dark:focus-within:border-teal-500 transition-all px-4 sm:px-5 py-3 sm:py-3.5 gap-3.5">
-          <Search className="w-5 h-5 text-teal-600 dark:text-teal-400 shrink-0" />
+          {isSearchingProducts ? (
+            <Loader2 className="w-5 h-5 text-teal-600 dark:text-teal-400 animate-spin shrink-0" />
+          ) : (
+            <Search className="w-5 h-5 text-teal-600 dark:text-teal-400 shrink-0" />
+          )}
           <input
             id="dashboard-global-search"
             type="text"
             className="w-full bg-transparent text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-normal focus:outline-hidden"
-            placeholder="Search by product name, model (e.g. A33 WF), brand (e.g. AS CARE), price, customer, or invoice..."
+            placeholder="Search model (e.g. V40e, A33 WF), brand, or customer..."
             value={globalSearch}
             onFocus={() => {
               setGlobalSearchFocused(true);
@@ -623,6 +629,14 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
             onChange={(e) => {
               setGlobalSearch(e.target.value);
               setGlobalSearchFocused(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && globalSearchResults.length > 0) {
+                e.preventDefault();
+                handleGlobalSearchSelect(globalSearchResults[0]);
+              } else if (e.key === 'Escape') {
+                setGlobalSearchFocused(false);
+              }
             }}
           />
           {globalSearch ? (
