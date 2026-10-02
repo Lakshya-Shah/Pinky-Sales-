@@ -10018,8 +10018,9 @@ function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
                 onClick={() => setSelectedPaymentCustomer(null)}
-                className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
+                className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
               />
 
               {/* Sliding Drawer */}
@@ -10027,63 +10028,73 @@ function App() {
                 initial={{ x: '100%' }}
                 animate={{ x: 0 }}
                 exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-                className="relative w-full max-w-md md:max-w-lg bg-white h-full shadow-2xl z-10 flex flex-col"
+                transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+                className="relative w-full max-w-md md:max-w-lg lg:max-w-xl bg-slate-50 h-full shadow-2xl z-10 flex flex-col border-l border-slate-200/80"
               >
                 {/* Drawer Header */}
-                <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-black text-slate-900">
-                        {selectedPaymentCustomer.customer_name || selectedPaymentCustomer.name}
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={() => printCustomerStatementPDF(selectedPaymentCustomer)}
-                        className="px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 transition-all flex items-center gap-1 cursor-pointer"
-                        title="Download / View Complete Customer Ledger Statement"
-                      >
-                        Customer Ledger
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openSalesReturnModal(selectedPaymentCustomer)}
-                        className="px-2 py-0.5 text-[10.5px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full transition-all flex items-center gap-1 cursor-pointer"
-                        title="Issue Credit Note / Sales Return for this customer"
-                      >
-                        <RotateCcw size={10} /> Return / Credit Note
-                      </button>
+                <div className="p-4 sm:p-5 border-b border-slate-200/80 bg-white flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-slate-900 to-slate-700 text-white flex items-center justify-center font-black text-sm shadow-sm shrink-0">
+                      {(selectedPaymentCustomer.customer_name || selectedPaymentCustomer.name || 'C').slice(0, 2).toUpperCase()}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {selectedPaymentCustomer.mobile || 'No phone'} {selectedPaymentCustomer.shop_name ? `· ${selectedPaymentCustomer.shop_name}` : ''}
-                    </p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-lg font-black text-slate-900 truncate">
+                          {selectedPaymentCustomer.customer_name || selectedPaymentCustomer.name}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => printCustomerStatementPDF(selectedPaymentCustomer)}
+                          className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80 transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                          title="Download / View Complete Customer Ledger Statement"
+                        >
+                          <BookOpen size={11} className="text-teal-600" /> Customer Ledger
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSalesReturnModal(selectedPaymentCustomer)}
+                          className="px-2.5 py-0.5 text-[11px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 rounded-full transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                          title="Issue Credit Note / Sales Return for this customer"
+                        >
+                          <RotateCcw size={11} className="text-amber-600" /> Return / Credit Note
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5 truncate">
+                        {selectedPaymentCustomer.mobile || 'No phone'} {selectedPaymentCustomer.shop_name ? `· ${selectedPaymentCustomer.shop_name}` : ''}
+                      </p>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSelectedPaymentCustomer(null)}
-                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                    className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors shrink-0 ml-2"
                   >
-                    <X size={18} />
+                    <X size={17} />
                   </button>
                 </div>
 
                 {/* Drawer Body */}
                 <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
                   {/* Financial Balance Summary Card */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  <div className="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white shadow-xl border border-slate-800/80 space-y-3.5">
+                    {/* Ambient Glow Orbs */}
+                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-teal-500/15 rounded-full blur-2xl pointer-events-none" />
+                    <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                    <div className="relative flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
                         {Number(selectedPaymentCustomer.pending_amount || selectedPaymentCustomer.pending || 0) > 0
                           ? 'Total Outstanding Due'
                           : (Number(selectedPaymentCustomer.advance_balance || 0) > 0 ? 'Store Credit / Advance Balance' : 'Account Balance')}
                       </span>
                       {Number(selectedPaymentCustomer.advance_balance || 0) > 0 && Number(selectedPaymentCustomer.pending_amount || selectedPaymentCustomer.pending || 0) <= 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10.5px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                           Available Credit
                         </span>
                       )}
                     </div>
-                    <div className={`text-2xl font-black ${
+
+                    <div className={`relative text-3xl sm:text-4xl font-black tracking-tight ${
                       Number(selectedPaymentCustomer.pending_amount || selectedPaymentCustomer.pending || 0) > 0
                         ? 'text-amber-400'
                         : (Number(selectedPaymentCustomer.advance_balance || 0) > 0 ? 'text-cyan-400' : 'text-emerald-400')
@@ -10096,25 +10107,27 @@ function App() {
                               ? `+${currency(selectedPaymentCustomer.advance_balance)} Cr`
                               : '₹0 (Settled)')}
                     </div>
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-700/60 text-xs">
-                      <div>
-                        <span className="text-slate-400 block text-[10.5px]">Total Invoiced</span>
-                        <strong className="text-slate-200 font-bold">{hidePendingValues ? '••••••' : currency(selectedPaymentCustomer.total_amount)}</strong>
+
+                    <div className="relative grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800 text-xs">
+                      <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
+                        <span className="text-slate-400 block text-[10.5px] font-semibold uppercase tracking-wider mb-0.5">Total Invoiced</span>
+                        <strong className="text-slate-100 font-extrabold text-sm">{hidePendingValues ? '••••••' : currency(selectedPaymentCustomer.total_amount)}</strong>
                       </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10.5px]">Total Paid</span>
-                        <strong className="text-emerald-400 font-bold">{hidePendingValues ? '••••••' : currency(selectedPaymentCustomer.paid_amount)}</strong>
+                      <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
+                        <span className="text-slate-400 block text-[10.5px] font-semibold uppercase tracking-wider mb-0.5">Total Paid</span>
+                        <strong className="text-emerald-400 font-extrabold text-sm">{hidePendingValues ? '••••••' : currency(selectedPaymentCustomer.paid_amount)}</strong>
                       </div>
                     </div>
-                    <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between text-xs">
+
+                    <div className="relative p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-xs">
                       <div>
-                        <span className="text-slate-400 block text-[10.5px]">Carry Forward (Opening) Balance</span>
-                        <strong className="text-amber-300 font-bold">
+                        <span className="text-slate-400 block text-[10.5px] font-semibold uppercase tracking-wider">Carry Forward (Opening) Balance</span>
+                        <strong className="text-amber-300 font-extrabold text-sm">
                           {hidePendingValues ? '••••••' : currency(selectedPaymentCustomer.opening_balance || 0)}
                         </strong>
                         {Number(selectedPaymentCustomer.settled_opening_balance || 0) > 0 && (
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            Settled: <span className="text-emerald-400 font-medium">{currency(selectedPaymentCustomer.settled_opening_balance)}</span> · Rem: <span className="text-amber-200 font-medium">{currency(selectedPaymentCustomer.remaining_opening_balance)}</span>
+                          <div className="text-[10.5px] text-slate-400 mt-0.5">
+                            Settled: <span className="text-emerald-400 font-bold">{currency(selectedPaymentCustomer.settled_opening_balance)}</span> · Rem: <span className="text-amber-200 font-bold">{currency(selectedPaymentCustomer.remaining_opening_balance)}</span>
                           </div>
                         )}
                       </div>
@@ -10125,7 +10138,7 @@ function App() {
                             setOpeningBalanceInput(String(selectedPaymentCustomer.opening_balance || 0));
                             setEditingOpeningBalance(true);
                           }}
-                          className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer active:scale-95"
                         >
                           <Pencil size={11} /> Edit Balance
                         </button>
@@ -10137,21 +10150,21 @@ function App() {
                             step="0.01"
                             value={openingBalanceInput}
                             onChange={(e) => setOpeningBalanceInput(e.target.value)}
-                            className="w-24 px-2 py-0.5 text-xs bg-slate-800 border border-slate-600 rounded text-white outline-none font-bold"
+                            className="w-24 px-2 py-1 text-xs bg-slate-800 border border-slate-600 rounded-lg text-white outline-none font-bold"
                             placeholder="0.00"
                           />
                           <button
                             type="button"
                             disabled={savingOpeningBalance}
                             onClick={handleSaveOpeningBalance}
-                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-bold disabled:opacity-50 cursor-pointer"
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold disabled:opacity-50 cursor-pointer active:scale-95"
                           >
-                            {savingOpeningBalance ? 'Saving...' : 'Save'}
+                            {savingOpeningBalance ? '...' : 'Save'}
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingOpeningBalance(false)}
-                            className="px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded text-[11px] cursor-pointer"
+                            className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-[11px] font-bold cursor-pointer"
                           >
                             Cancel
                           </button>
@@ -10173,25 +10186,26 @@ function App() {
                     return (
                       <div>
                         <div className="flex items-center justify-between mb-2.5">
-                          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <ReceiptText size={14} className="text-teal-600" />
                             Purchase & Payment History ({allCustomerInvoices.length})
                           </h4>
                           <button
                             type="button"
                             onClick={() => printCustomerStatementPDF(selectedPaymentCustomer)}
-                            className="text-xs font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1 cursor-pointer"
+                            className="text-xs font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1 cursor-pointer transition-colors"
                           >
-                            <ReceiptText size={13} /> Complete Statement
+                            <FileText size={13} /> Complete Statement
                           </button>
                         </div>
 
                         {/* Tab Filter: All / Pending / Paid */}
-                        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl mb-3">
+                        <div className="flex items-center gap-1.5 p-1 bg-slate-200/80 rounded-xl mb-3 border border-slate-300/60">
                           <button
                             type="button"
                             onClick={() => setCustomerDrawerTab('all')}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                              customerDrawerTab === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                            className={`flex-1 py-1.5 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                              customerDrawerTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                             }`}
                           >
                             All ({allCustomerInvoices.length})
@@ -10199,8 +10213,8 @@ function App() {
                           <button
                             type="button"
                             onClick={() => setCustomerDrawerTab('pending')}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                              customerDrawerTab === 'pending' ? 'bg-white text-rose-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                            className={`flex-1 py-1.5 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                              customerDrawerTab === 'pending' ? 'bg-white text-rose-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                             }`}
                           >
                             Pending ({unpaidInvoices.length})
@@ -10208,8 +10222,8 @@ function App() {
                           <button
                             type="button"
                             onClick={() => setCustomerDrawerTab('paid')}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                              customerDrawerTab === 'paid' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                            className={`flex-1 py-1.5 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                              customerDrawerTab === 'paid' ? 'bg-white text-emerald-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                             }`}
                           >
                             Paid in Full ({paidInvoices.length})
@@ -10217,93 +10231,104 @@ function App() {
                         </div>
 
                         {displayedInvoices.length === 0 ? (
-                          <div className="p-4 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
+                          <div className="p-6 text-center text-xs font-medium text-slate-500 bg-white rounded-2xl border border-slate-200 shadow-2xs">
                             {customerDrawerTab === 'pending' ? 'No pending invoices for this customer.' : 'No invoices in this category.'}
                           </div>
                         ) : (
-                          <div className="space-y-2.5">
+                          <div className="space-y-3">
                             {displayedInvoices.map((sale) => {
                               const isPaid = Number(sale.pending_amount || 0) <= 0;
                               const saleDueInfo = getDueDateInfo(sale.due_date);
                               const invNumber = sale.invoice_number || `INV-${String(sale.id).padStart(6, '0')}`;
                               
                               return (
-                                <div key={sale.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2.5 hover:border-slate-300 transition-all">
-                                  <div className="flex items-center justify-between">
-                                    <div>
-                                      <span className="font-mono font-black text-slate-900 text-xs">
+                                <motion.div 
+                                  key={sale.id} 
+                                  initial={{ opacity: 0, y: 6 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ duration: 0.18 }}
+                                  className="p-4 rounded-2xl border border-slate-200 bg-white shadow-2xs hover:shadow-md hover:border-slate-300 transition-all duration-200 space-y-3"
+                                >
+                                  {/* Invoice Top Header */}
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 text-slate-100 font-mono font-extrabold text-xs tracking-wide shadow-2xs">
+                                        <FileText size={11} className="text-teal-400" />
                                         {invNumber}
                                       </span>
-                                      <span className="text-[11px] text-slate-500 ml-2">
-                                        Bought on {formatDateDMY(sale.sale_date || sale.invoice_date)}
+                                      <span className="text-xs text-slate-600 font-medium">
+                                        Bought on <strong className="text-slate-800 font-bold">{formatDateDMY(sale.sale_date || sale.invoice_date)}</strong>
                                       </span>
                                     </div>
                                     {isPaid ? (
-                                      <span className="px-2 py-0.5 rounded-full text-[10.5px] border bg-emerald-50 text-emerald-800 border-emerald-200 font-bold">
-                                        ✓ Paid in Full
+                                      <span className="px-2.5 py-0.5 rounded-full text-[11px] border bg-emerald-50 text-emerald-800 border-emerald-200 font-extrabold flex items-center gap-1">
+                                        <CheckCircle2 size={11} className="text-emerald-600" /> Paid in Full
                                       </span>
                                     ) : (
-                                      <span className={`px-2 py-0.5 rounded-full text-[10.5px] border ${saleDueInfo.badgeClass}`}>
+                                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${saleDueInfo.badgeClass}`}>
                                         {saleDueInfo.label}
                                       </span>
                                     )}
                                   </div>
 
-                                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
+                                  {/* Pending & Total Banner + Actions */}
+                                  <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-slate-100">
                                     <div>
                                       {isPaid ? (
-                                        <span className="text-emerald-700 font-bold text-[11.5px]">
+                                        <span className="text-emerald-700 font-extrabold text-xs">
                                           Paid in Full
                                         </span>
                                       ) : (
                                         <>
-                                          <span className="text-slate-500 text-[11px]">Pending: </span>
-                                          <strong className="font-bold text-rose-600">{currency(sale.pending_amount)}</strong>
+                                          <span className="text-slate-500 font-semibold text-xs">Pending: </span>
+                                          <strong className="font-black text-rose-600 text-sm">{currency(sale.pending_amount)}</strong>
                                         </>
                                       )}
-                                      <span className="text-slate-400 text-[10.5px] ml-1.5">(Total: {currency(sale.total_amount)})</span>
+                                      <span className="text-slate-500 font-medium text-xs ml-2">
+                                        (Total: <strong className="text-slate-800 font-bold">{currency(sale.total_amount)}</strong>)
+                                      </span>
                                     </div>
 
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
                                       <button
                                         type="button"
                                         onClick={() => printTaxInvoicePDF(sale)}
-                                        className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                                        className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
                                       >
-                                        <ReceiptText size={12} /> Invoice
+                                        <ReceiptText size={12} className="text-slate-500" /> Invoice
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => openInvoiceShareModal(sale, selectedPaymentCustomer)}
-                                        className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
                                         title="Share this invoice via WhatsApp & PDF"
                                       >
-                                        <Send size={12} /> Share
+                                        <Send size={12} className="text-emerald-600" /> Share
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => openSalesReturnModal(sale)}
-                                        className="px-2 py-1 bg-white hover:bg-amber-50 text-amber-800 border border-slate-200 hover:border-amber-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                        className="px-2.5 py-1.5 bg-white hover:bg-amber-50 text-amber-900 border border-slate-300 hover:border-amber-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
                                         title="Return items from this invoice"
                                       >
-                                        <RotateCcw size={12} /> Return
+                                        <RotateCcw size={12} className="text-amber-600" /> Return
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => openEditSaleModal(sale)}
-                                        className="px-2 py-1 bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                        className="px-2.5 py-1.5 bg-white hover:bg-sky-50 text-sky-900 border border-slate-300 hover:border-sky-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
                                         title="Edit invoice dates, payment terms, expenses & remarks"
                                       >
-                                        <Pencil size={12} /> Edit
+                                        <Pencil size={12} className="text-sky-600" /> Edit
                                       </button>
                                       {(role === 'superadmin' || Number(sale.created_by) === Number(session?.id)) && (
                                         <button
                                           type="button"
                                           onClick={() => deleteSale(sale)}
-                                          className="p-1 text-rose-500 hover:text-rose-700 bg-white hover:bg-rose-50 rounded-lg border border-slate-200 transition-colors"
+                                          className="p-1.5 text-rose-500 hover:text-rose-700 bg-white hover:bg-rose-50 rounded-lg border border-slate-300 hover:border-rose-300 transition-all shadow-2xs active:scale-95 cursor-pointer"
                                           title="Delete invoice and restore stock"
                                         >
-                                          <Trash2 size={12} />
+                                          <Trash2 size={13} />
                                         </button>
                                       )}
                                     </div>
@@ -10311,16 +10336,16 @@ function App() {
 
                                   {/* Payments / Repayments history on this invoice */}
                                   {Array.isArray(sale.payments) && sale.payments.length > 0 && (
-                                    <div className="bg-emerald-50/60 p-2 rounded-lg border border-emerald-100 text-[11px] text-emerald-900 space-y-1">
-                                      <span className="font-bold block text-[10px] uppercase tracking-wider text-emerald-700">
+                                    <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200/80 text-xs text-emerald-950 space-y-1">
+                                      <span className="font-extrabold block text-[10.5px] uppercase tracking-wider text-emerald-800">
                                         Repayment Details:
                                       </span>
                                       {sale.payments.map((pm, pidx) => (
-                                        <div key={pm.id || pidx} className="flex items-center justify-between">
+                                        <div key={pm.id || pidx} className="flex items-center justify-between text-xs">
                                           <span>
-                                            Repaid on <strong>{formatDateDMY(pm.payment_date)}</strong> via <strong className="capitalize">{pm.payment_mode || 'Cash'}</strong>{pm.note ? ` (${pm.note})` : ''}
+                                            Repaid on <strong className="font-bold text-slate-900">{formatDateDMY(pm.payment_date)}</strong> via <strong className="capitalize font-bold text-slate-900">{pm.payment_mode || 'Cash'}</strong>{pm.note ? ` (${pm.note})` : ''}
                                           </span>
-                                          <strong className="font-bold text-emerald-800">{currency(pm.amount)}</strong>
+                                          <strong className="font-black text-emerald-800 text-xs">{currency(pm.amount)}</strong>
                                         </div>
                                       ))}
                                     </div>
@@ -10341,8 +10366,8 @@ function App() {
                                     const expensesList = Array.isArray(sale.expenses) ? sale.expenses : [];
 
                                     return (
-                                      <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 space-y-1.5">
-                                        <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                                      <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 space-y-2">
+                                        <div className="flex items-center justify-between text-[10.5px] font-black uppercase text-slate-500 tracking-wider pb-1 border-b border-slate-200/70">
                                           <span>Invoice Items ({invoiceProducts.length})</span>
                                           <span>Line Total</span>
                                         </div>
@@ -10352,28 +10377,30 @@ function App() {
                                           const itemLineTotal = Number(it.total_price || (itemUnit * itemQty));
 
                                           return (
-                                            <div key={it.id || itIdx} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
-                                              <div>
+                                            <div key={it.id || itIdx} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-200/60 last:border-0">
+                                              <div className="min-w-0 pr-2">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                  <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
-                                                  <span className="font-bold">{it.product_name || it.name || productName(it)}</span>
+                                                  <span className="w-2 h-2 rounded-full bg-teal-500 shrink-0"></span>
+                                                  <span className="font-extrabold text-slate-900 text-xs leading-snug">
+                                                    {it.product_name || it.name || productName(it)}
+                                                  </span>
 
                                                   {getBrandName(it, sale) && (
-                                                    <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-white text-slate-800 border border-slate-300 text-[10px] font-bold shadow-2xs">
                                                       {getBrandName(it, sale)}
                                                     </span>
                                                   )}
                                                   {it.colour && (
-                                                    <span className="px-1.5 py-0.2 rounded bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold">
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-bold shadow-2xs">
                                                       ● {it.colour}
                                                     </span>
                                                   )}
                                                 </div>
-                                                <div className="text-[11px] text-slate-400 pl-3">
-                                                  Qty: {itemQty} pcs · Rate: {currency(itemUnit)}
+                                                <div className="text-[11.5px] text-slate-600 font-semibold pl-3.5 mt-0.5">
+                                                  Qty: <strong className="text-slate-900 font-bold">{itemQty} pcs</strong> · Rate: <strong className="text-slate-900 font-bold">{currency(itemUnit)}</strong>
                                                 </div>
                                               </div>
-                                              <strong className="text-slate-900 font-bold text-xs shrink-0 ml-2">
+                                              <strong className="text-slate-950 font-black text-xs shrink-0 ml-2">
                                                 {currency(itemLineTotal)}
                                               </strong>
                                             </div>
@@ -10381,10 +10408,10 @@ function App() {
                                         })}
 
                                         {expensesList.length > 0 && (
-                                          <div className="pt-1.5 border-t border-slate-100 space-y-1 text-[11px]">
-                                            <span className="text-[10px] font-bold text-teal-700 uppercase">Extra Expenses:</span>
+                                          <div className="pt-2 border-t border-slate-200/70 space-y-1 text-xs">
+                                            <span className="text-[10.5px] font-bold text-teal-800 uppercase tracking-wide">Extra Expenses:</span>
                                             {expensesList.map((exp, expIdx) => (
-                                              <div key={exp.id || expIdx} className="flex justify-between text-teal-800 font-medium">
+                                              <div key={exp.id || expIdx} className="flex justify-between text-teal-900 font-bold">
                                                 <span>+ {exp.expense_name || exp.expense_type}</span>
                                                 <span>{currency(exp.amount)}</span>
                                               </div>
@@ -10394,7 +10421,7 @@ function App() {
                                       </div>
                                     );
                                   })()}
-                                </div>
+                                </motion.div>
                               );
                             })}
                           </div>
@@ -10405,7 +10432,7 @@ function App() {
                 </div>
 
                 {/* Drawer Sticky Footer Actions */}
-                <div className="p-4 border-t border-slate-200 bg-slate-50/90 flex items-center gap-2">
+                <div className="p-4 border-t border-slate-200 bg-white/95 backdrop-blur-md flex items-center gap-2.5 shadow-lg">
                   <button
                     type="button"
                     onClick={() => {
@@ -10417,7 +10444,7 @@ function App() {
                         note: '',
                       });
                     }}
-                    className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl font-extrabold text-xs shadow-md shadow-teal-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <CreditCard size={15} /> Record Payment
                   </button>
@@ -10425,9 +10452,9 @@ function App() {
                   <button
                     type="button"
                     onClick={() => openPendingShareModal(selectedPaymentCustomer)}
-                    className="px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    className="px-4 py-3 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl font-extrabold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs active:scale-[0.98]"
                   >
-                    <Send size={15} /> Share
+                    <Send size={15} className="text-emerald-600" /> Share
                   </button>
                 </div>
               </motion.div>

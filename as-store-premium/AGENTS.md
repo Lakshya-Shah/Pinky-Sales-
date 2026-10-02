@@ -11,3 +11,7 @@
 
 ### 2. Standing Automated Test Suite
 - Any change to the ledger engine or payment allocations MUST pass all test groups in `backend/test_fifo_ledger.js`, including Test Group 11 (Credit Notes verification and balance reconciliation).
+
+### 3. Customer Opening Balance Immutability During Sales
+- **Master Record Integrity**: `customers.opening_balance` must NEVER be modified or inferred when creating (`POST /sales`) or updating (`PUT /sales/:id`) sales invoices.
+- **Previous Balance Snapshot**: `sales.previous_balance` is purely a historical snapshot at the moment an invoice is created/edited. It must never overwrite customer records or insert spurious `OPENING_BALANCE` entries into `ledger_entries`. Customer opening balances can only be set during customer creation or via explicit customer master record edits.
