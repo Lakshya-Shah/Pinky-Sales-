@@ -1461,13 +1461,16 @@ function SalesCreationWorkspace({
         ...prev,
         sale: {
           ...prev.sale,
-          previous_balance: '',
+          previous_balance: 0,
           applied_credit_amount: 0,
           apply_advance: true,
         },
       }));
       return;
     }
+
+    // Immediately clear previous customer balance info while new customer data is loading
+    setCustomerBalanceInfo({ outstanding_balance: 0, advance_balance: 0, available_credits: 0, credit_notes: [] });
 
     let isMounted = true;
     const fetchBalance = async () => {
@@ -1490,7 +1493,9 @@ function SalesCreationWorkspace({
               ...prev,
               sale: {
                 ...prev.sale,
-                previous_balance: (prev.sale?.editing_sale_id && prev.sale?.previous_balance !== '') ? prev.sale.previous_balance : outBal,
+                previous_balance: (prev.sale?.editing_sale_id && prev.sale?.previous_balance !== '')
+                  ? prev.sale.previous_balance
+                  : (outBal > 0 ? outBal : 0),
                 apply_advance: true,
               },
             }));
@@ -1504,7 +1509,9 @@ function SalesCreationWorkspace({
             ...prev,
             sale: {
               ...prev.sale,
-              previous_balance: (prev.sale?.editing_sale_id && prev.sale?.previous_balance !== '') ? prev.sale.previous_balance : outBal,
+              previous_balance: (prev.sale?.editing_sale_id && prev.sale?.previous_balance !== '')
+                ? prev.sale.previous_balance
+                : (outBal > 0 ? outBal : 0),
               apply_advance: true,
             },
           }));
@@ -1637,12 +1644,16 @@ function SalesCreationWorkspace({
                       } catch (err) {}
                     }
                     if (cashCust) {
+                      setCustomerBalanceInfo({ outstanding_balance: 0, advance_balance: 0, available_credits: 0, credit_notes: [] });
                       setForms((prev) => ({
                         ...prev,
                         sale: {
                           ...prev.sale,
                           customer_id: String(cashCust.id),
-                          payment_mode: 'cash'
+                          payment_mode: 'cash',
+                          previous_balance: 0,
+                          editing_sale_id: null,
+                          editing_invoice_number: null,
                         }
                       }));
                     }
@@ -1663,7 +1674,17 @@ function SalesCreationWorkspace({
             </div>
             <SearchableCombobox
               value={forms.sale.customer_id}
-              onChange={(v) => setForms((prev) => ({ ...prev, sale: { ...prev.sale, customer_id: v } }))}
+              onChange={(v) => {
+                setCustomerBalanceInfo({ outstanding_balance: 0, advance_balance: 0, available_credits: 0, credit_notes: [] });
+                setForms((prev) => ({
+                  ...prev,
+                  sale: {
+                    ...prev.sale,
+                    customer_id: v,
+                    previous_balance: prev.sale.editing_sale_id ? prev.sale.previous_balance : 0,
+                  }
+                }));
+              }}
               options={(data.customers || []).map((c) => [c.id, `${c.name}${c.mobile ? ` (${c.mobile})` : ''}${c.address ? ` - ${c.address}` : ''}`])}
               placeholder="Search or select customer..."
               searchPlaceholder="Search by name, phone, or address..."
@@ -2194,13 +2215,13 @@ function SalesCreationWorkspace({
                         Advance / Credit
                       </span>
                     )}
-                    {autoFetchedBalance > 0 && forms.sale.previous_balance !== '' && Number(forms.sale.previous_balance) !== autoFetchedBalance && Number(forms.sale.previous_balance || 0) >= 0 && (
+                    {forms.sale.customer_id && autoFetchedBalance > 0 && forms.sale.previous_balance !== '' && Number(forms.sale.previous_balance) !== autoFetchedBalance && Number(forms.sale.previous_balance || 0) >= 0 && (
                       <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                         Manual
                       </span>
                     )}
                   </label>
-                  {autoFetchedBalance > 0 && forms.sale.previous_balance !== '' && Number(forms.sale.previous_balance) !== autoFetchedBalance && (
+                  {forms.sale.customer_id && autoFetchedBalance > 0 && forms.sale.previous_balance !== '' && Number(forms.sale.previous_balance) !== autoFetchedBalance && (
                     <button
                       type="button"
                       onClick={() => setForms((prev) => ({ ...prev, sale: { ...prev.sale, previous_balance: String(autoFetchedBalance) } }))}
@@ -2786,7 +2807,25 @@ function App() {
         setData((prev) => ({ ...prev, customers: rows }));
         const newId = created?.id || rows.find(c => c.name.toLowerCase() === quickCustomerForm.name.trim().toLowerCase())?.id;
         if (newId) {
-          setForms((prev) => ({ ...prev, sale: { ...prev.sale, customer_id: String(newId) } }));
+          const newCustOb = quickCustomerForm.opening_balance && !isNaN(Number(quickCustomerForm.opening_balance))
+            ? Number(quickCustomerForm.opening_balance)
+            : 0;
+          setForms((prev) => ({
+            ...prev,
+            sale: {
+              ...prev.sale,
+              customer_id: String(newId),
+              editing_sale_id: null,
+              editing_invoice_number: null,
+              previous_balance: newCustOb > 0 ? newCustOb : 0,
+            }
+          }));
+          setCustomerBalanceInfo({
+            outstanding_balance: newCustOb,
+            advance_balance: 0,
+            available_credits: 0,
+            credit_notes: [],
+          });
         }
         setCustomerPager((prev) => ({ ...prev, total: (prev.total || 0) + 1 }));
         setQuickCustomerForm({ name: '', mobile: '', address: '', gstin: '', customer_type: 'retailer', opening_balance: '' });
@@ -5187,14 +5226,16 @@ function App() {
   };
 
   const cancelEditSale = () => {
+    setCustomerBalanceInfo({ outstanding_balance: 0, advance_balance: 0, available_credits: 0, credit_notes: [] });
     setForms((prev) => ({
       ...prev,
       sale: {
         ...initialForms.sale,
+        customer_id: '',
         invoice_date: '',
         payment_terms_days: 7,
         due_date: '',
-        previous_balance: '',
+        previous_balance: 0,
         applied_credit_amount: 0,
         items: [{ product_id: '', selling_price: '', price_type: 'wholesale', quantity: '', total_amount: '' }],
         expenses: [],
@@ -5395,10 +5436,12 @@ function App() {
         }),
       });
 
+      setCustomerBalanceInfo({ outstanding_balance: 0, advance_balance: 0, available_credits: 0, credit_notes: [] });
       setForms((prev) => ({
         ...prev,
         sale: {
           ...initialForms.sale,
+          customer_id: '',
           invoice_date: '',
           payment_terms_days: 7,
           due_date: '',
@@ -6586,14 +6629,6 @@ function App() {
 
     const currentInvoiceTotal = Math.max(0, (productsSubtotal + courier) - appliedCredit - Number(sale.advance_applied || 0));
 
-    // If prevBalance is not explicitly present on the sale record, but customer has prior outstanding balance
-    if (!prevBalance && customerAccountOutstanding > 0) {
-      const currentInvoiceDue = Math.max(0, currentInvoiceTotal - paidAmount);
-      if (customerAccountOutstanding > currentInvoiceDue) {
-        prevBalance = customerAccountOutstanding - currentInvoiceDue;
-      }
-    }
-
     if (!isConsolidated) {
       if (prevBalance > 0) {
         finalBillAmount = sale.net_payable_amount !== undefined && sale.net_payable_amount !== null && Number(sale.net_payable_amount) >= (currentInvoiceTotal + prevBalance)
@@ -6706,7 +6741,7 @@ function App() {
                 </div>
                 <div class="notes-block">Notes<br/>${safe(isConsolidated ? 'This statement includes all selected purchases made by this customer at this branch.' : sale.notes || 'Thanks for your business.')}</div>
                 <div class="notes-block">Terms &amp; Conditions<br/>ORIGINAL LCD GOODS THREE MONTHS WARRANTY ONLY</div>
-                ${!isConsolidated && customerAccountOutstanding > 0 ? `
+                ${!isConsolidated && prevBalance === 0 && customerAccountOutstanding > 0 && Math.abs(customerAccountOutstanding - finalBillAmount) > 0.01 ? `
                   <div class="notes-block" style="color: #b45309; font-weight: 700; background: #fffbeb; padding: 6px 8px; border-radius: 4px; border: 1px solid #fde68a;">
                     Total Account Outstanding: Rs. ${formatAmount(customerAccountOutstanding)}
                   </div>
@@ -7649,7 +7684,7 @@ function App() {
                 setActivePage={setActivePage}
                 trendFromValue={trendFromValue}
                 onAddProduct={() => setActivePage('stock')}
-                onCreateSale={() => setActivePage('sales')}
+                onCreateSale={() => { cancelEditSale(); setActivePage('sales'); }}
                 onImportStock={() => setActivePage('supplier-import')}
                 globalSearch={globalSearch}
                 setGlobalSearch={setGlobalSearch}

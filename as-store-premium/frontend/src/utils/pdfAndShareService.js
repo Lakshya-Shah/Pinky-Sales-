@@ -464,9 +464,6 @@ export const generateInvoicePDFDoc = async (sale, customer = {}, shop = {}) => {
     );
     const currentBillNet = Math.max(0, (productsSubtotal + courier) - appliedCredit - advanceApplied);
     const currentInvoiceDue = Math.max(0, currentBillNet - paidAmount);
-    if (!prevBalance && customerAccountOutstanding > currentInvoiceDue) {
-      prevBalance = customerAccountOutstanding - currentInvoiceDue;
-    }
 
     if (appliedCredit > 0) {
       rightRows.push({ label: '- CREDIT NOTE', amount: `-${formatMoney(appliedCredit)}`, bold: false, color: [15, 118, 110] });
@@ -590,7 +587,7 @@ export const generateInvoicePDFDoc = async (sale, customer = {}, shop = {}) => {
     0
   );
   let outLines = [];
-  if (!isConsolidated && customerAccountOutstanding > 0) {
+  if (!isConsolidated && prevBalance === 0 && customerAccountOutstanding > 0 && Math.abs(customerAccountOutstanding - finalBillAmount) > 0.01) {
     outLines = doc.splitTextToSize(`Total Account Outstanding: Rs. ${formatMoney(customerAccountOutstanding)}`, maxLeftWidth);
   }
 
@@ -737,6 +734,11 @@ export const generateStatementPDFDoc = async (customer = {}, invoices = [], shop
     : validInvoices.reduce((s, inv) => s + Number(inv.paid_amount || 0), 0);
   const totalDebits = purchasesTotal + (openingBal > 0 ? openingBal : 0);
   let totalDue = Math.max(0, totalDebits - totalPaid);
+  if (customer?.total_outstanding !== undefined && customer?.total_outstanding !== null && !isNaN(Number(customer.total_outstanding))) {
+    totalDue = Math.max(0, Number(customer.total_outstanding));
+  } else if (customer?.pending_amount !== undefined && customer?.pending_amount !== null && !isNaN(Number(customer.pending_amount))) {
+    totalDue = Math.max(0, Number(customer.pending_amount));
+  }
 
   // Calculate customer's remaining available advance / store credit balance
   const prevBal = Number(firstInvoice?.previous_balance ?? firstInvoice?.old_balance ?? 0);
