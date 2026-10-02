@@ -70,5 +70,4 @@ SET opening_balance = 0.00,
     current_balance = 44970.00,
     advance_balance = 0.00
 WHERE id = 15;
-
 COMMIT;

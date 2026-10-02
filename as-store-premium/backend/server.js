@@ -5308,25 +5308,8 @@ app.post('/api/sales', authenticateToken, requireShopStaff, async (req, res) => 
         ? money(req.body.previous_balance)
         : livePrevBalance;
 
-      // If customer had 0 opening balance and 0 previous sales pending, but user entered a previous balance on invoice,
-      // record it as the customer's opening balance in customers and ledger_entries!
-      if (customerOpeningBal === 0 && existingSalesPending === 0 && previousBalance > 0) {
-        await tx.runQuery(
-          'UPDATE customers SET opening_balance = ?, opening_balance_date = COALESCE(opening_balance_date, ?) WHERE id = ?',
-          [previousBalance, invoiceDateStr, customer_id]
-        );
-        const existingOB = await tx.getRecord(
-          'SELECT id FROM ledger_entries WHERE customer_id = ? AND entry_type = ?',
-          [customer_id, 'OPENING_BALANCE']
-        );
-        if (!existingOB) {
-          await tx.runQuery(
-            `INSERT INTO ledger_entries (shop_id, customer_id, entry_type, ref_no, entry_date, debit, credit, description, created_by)
-             VALUES (?, ?, 'OPENING_BALANCE', ?, ?, ?, 0.00, ?, ?)`,
-            [shopId, customer_id, `OB-${String(customer_id).padStart(6, '0')}`, invoiceDateStr, previousBalance, `Opening Balance entered on invoice for ${customer.name}`, req.user.id]
-          );
-        }
-      }
+      // Invariant: Customer opening_balance is immutable during sales operations.
+      // Sales invoices record previous_balance as a snapshot without altering customer master records.
 
       const preparedItems = [];
       const reservedByBatch = new Map();
@@ -6160,28 +6143,10 @@ const handleUpdateSale = async (req, res) => {
         productsTotal = Number(itemTotals?.pt || sale.total_amount || 0);
       }
 
-      // 5. Previous balance handling
+      // 5. Previous balance handling (snapshot on sale record only; customer opening_balance is immutable)
       let previousBalance = Number(sale.previous_balance || 0);
       if (req.body.previous_balance !== undefined && req.body.previous_balance !== null && req.body.previous_balance !== '' && !isNaN(Number(req.body.previous_balance))) {
         previousBalance = money(req.body.previous_balance);
-        const cust = await tx.getRecord('SELECT id, name, shop_id, COALESCE(opening_balance, 0) AS opening_balance, opening_balance_date FROM customers WHERE id = ?', [targetCustomerId]);
-        if (cust && Number(cust.opening_balance) === 0 && previousBalance > 0) {
-          await tx.runQuery(
-            'UPDATE customers SET opening_balance = ?, opening_balance_date = COALESCE(opening_balance_date, ?) WHERE id = ?',
-            [previousBalance, invoiceDateStr, targetCustomerId]
-          );
-          const existingOB = await tx.getRecord(
-            'SELECT id FROM ledger_entries WHERE customer_id = ? AND entry_type = ?',
-            [targetCustomerId, 'OPENING_BALANCE']
-          );
-          if (!existingOB) {
-            await tx.runQuery(
-              `INSERT INTO ledger_entries (shop_id, customer_id, entry_type, ref_no, entry_date, debit, credit, description, created_by)
-               VALUES (?, ?, 'OPENING_BALANCE', ?, ?, ?, 0.00, ?, ?)`,
-              [cust.shop_id || sale.shop_id, targetCustomerId, `OB-${String(targetCustomerId).padStart(6, '0')}`, invoiceDateStr, previousBalance, `Opening Balance recorded on invoice for ${cust.name}`, req.user.id]
-            );
-          }
-        }
       }
 
       // 6. Recalculate totals and financials

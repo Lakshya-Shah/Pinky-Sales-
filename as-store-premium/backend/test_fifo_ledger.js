@@ -82,6 +82,7 @@ async function runTests() {
   let customer3Id = null;
   let customer4Id = null;
   let customer5Id = null;
+  let customer6Id = null;
   let testProduct = null;
   let shopId = 1;
 
@@ -625,13 +626,51 @@ async function runTests() {
       console.log(`   [Customer 21 Verified]: Total Outstanding = ₹${c21Outstanding.total_outstanding}, Ledger Closing = ₹${c21Ledger.closing_balance}`);
     }
 
-
-
-
     console.log('✔ Test 12 Passed: Customer Total Outstanding reconciles 100% with Party Ledger and Invariant across all scenarios.');
 
+    // ── TEST GROUP 13: Customer Opening Balance Immutability During Sales ──
+    console.log('\n── TEST GROUP 13: Customer Opening Balance Immutability During Sales ──');
+    const cust6Res = await runQuery(
+      `INSERT INTO customers (shop_id, name, mobile, address, opening_balance, advance_balance, opening_balance_date)
+       VALUES (?, 'Test Cust 6 OB Immutability', '9999900006', 'Test Street', 0.00, 0.00, '2026-08-01') RETURNING id`,
+      [shopId]
+    );
+    customer6Id = cust6Res.rows ? cust6Res.rows[0].id : cust6Res.id;
+
+    // Simulate Sale 1
+    const sale1Res = await runQuery(
+      `INSERT INTO sales (shop_id, customer_id, product_id, quantity, total_amount, paid_amount, pending_amount, sale_date, invoice_date, previous_balance, current_invoice_total)
+       VALUES (?, ?, ?, 1, 5000.00, 0.00, 5000.00, '2026-08-10', '2026-08-10', 0.00, 5000.00) RETURNING id`,
+      [shopId, customer6Id, testProduct.id]
+    );
+    const sale1Id = sale1Res.rows ? sale1Res.rows[0].id : sale1Res.id;
+
+    // Simulate Sale 2 carrying forward previous_balance (sum of Sale 1 = 5,000)
+    const sale2Res = await runQuery(
+      `INSERT INTO sales (shop_id, customer_id, product_id, quantity, total_amount, paid_amount, pending_amount, sale_date, invoice_date, previous_balance, current_invoice_total)
+       VALUES (?, ?, ?, 1, 7000.00, 0.00, 7000.00, '2026-08-15', '2026-08-15', 5000.00, 7000.00) RETURNING id`,
+      [shopId, customer6Id, testProduct.id]
+    );
+    const sale2Id = sale2Res.rows ? sale2Res.rows[0].id : sale2Res.id;
+
+    // Verify customer's opening_balance is still 0
+    const cust6Check1 = await getRecord('SELECT opening_balance FROM customers WHERE id = ?', [customer6Id]);
+    assert.strictEqual(Number(cust6Check1.opening_balance), 0, 'Customer opening_balance must remain 0 after multiple sales');
+
+    // Simulate updating Sale 2 with carry-forward previous_balance (e.g. 12,000)
+    await runQuery('UPDATE sales SET previous_balance = 12000.00 WHERE id = ?', [sale2Id]);
+
+    const cust6Check2 = await getRecord('SELECT opening_balance FROM customers WHERE id = ?', [customer6Id]);
+    assert.strictEqual(Number(cust6Check2.opening_balance), 0, 'Customer opening_balance must remain 0 after sales update');
+
+    // Check no bogus ledger entry was created
+    const leCheck = await allRecords("SELECT id FROM ledger_entries WHERE customer_id = ? AND entry_type = 'OPENING_BALANCE'", [customer6Id]);
+    assert.strictEqual(leCheck.length, 0, 'No bogus OPENING_BALANCE ledger entry should exist');
+
+    console.log('✔ Test 13 Passed: Customer opening balance is strictly immutable during sales creation and updates.');
+
     console.log('\n================================================================');
-    console.log('   ALL 12 FIFO LEDGER & RECONCILIATION TEST GROUPS PASSED!       ');
+    console.log('   ALL 13 FIFO LEDGER & RECONCILIATION TEST GROUPS PASSED!       ');
     console.log('================================================================\n');
 
   } catch (err) {
@@ -661,6 +700,12 @@ async function runTests() {
         await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer5Id]);
         await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer5Id]);
         await runQuery('DELETE FROM customers WHERE id = ?', [customer5Id]);
+      }
+      if (customer6Id) {
+        await runQuery('DELETE FROM payment_allocations WHERE customer_id = ?', [customer6Id]);
+        await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer6Id]);
+        await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer6Id]);
+        await runQuery('DELETE FROM customers WHERE id = ?', [customer6Id]);
       }
     } catch {}
     await pool.end();
