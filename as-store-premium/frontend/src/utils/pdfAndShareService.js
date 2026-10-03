@@ -451,10 +451,10 @@ export const generateInvoicePDFDoc = async (sale, customer = {}, shop = {}) => {
 
   let finalBillAmount = 0;
   let balanceDue = 0;
+  let prevBalance = Number(sale?.previous_balance ?? sale?.old_balance ?? 0);
 
   if (!isConsolidated) {
     // Option A: Standard B2B Single Tax Invoice (Self-contained single invoice)
-    let prevBalance = Number(sale?.previous_balance ?? sale?.old_balance ?? 0);
     const customerAccountOutstanding = Number(
       customer?.total_outstanding ??
       customer?.pending_amount ??
@@ -516,7 +516,6 @@ export const generateInvoicePDFDoc = async (sale, customer = {}, shop = {}) => {
 
     const currentBillNet = (productsSubtotal + courier) - appliedCredit - advanceApplied;
 
-    let prevBalance = Number(sale?.previous_balance ?? sale?.old_balance ?? 0);
     if (customerTotalPending !== null && !isNaN(customerTotalPending) && customerTotalPending > 0) {
       prevBalance = Math.max(0, customerTotalPending - currentBillNet + paidAmount);
       finalBillAmount = customerTotalPending;
