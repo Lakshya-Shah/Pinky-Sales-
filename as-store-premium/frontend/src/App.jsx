@@ -1,6 +1,7 @@
 import React, { useDeferredValue, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import {
+  AlertCircle,
   AlertTriangle,
   ArrowLeft,
   BarChart3,
@@ -1110,12 +1111,19 @@ const SaleItemRow = React.memo(function SaleItemRow({
 }) {
   const selectedProd = (data.products || []).find((p) => String(p.id || p.product_id) === String(item.product_id)) 
     || (data.productResults || []).find((p) => String(p.id || p.product_id) === String(item.product_id))
-    || (data.catalog || []).find((p) => String(p.id || p.product_id) === String(item.product_id));
+    || (data.catalog || []).find((p) => String(p.id || p.product_id) === String(item.product_id))
+    || (data.stock || []).find((p) => String(p.id || p.product_id) === String(item.product_id));
   const availableColors = getProductAvailableColors ? getProductAvailableColors(selectedProd) : [];
   const hasMultipleColours = availableColors.length > 1;
   const colorStockMap = selectedProd?.colour_stock || {};
   const activeBreakdown = item.color_breakdown || [];
   const currentVariantValue = item.selected_colour || (activeBreakdown.length === 1 ? activeBreakdown[0].color : (activeBreakdown.length > 1 ? '__split__' : (availableColors[0] || '')));
+
+  const selectedOption = (salesProductOptions || []).find((opt) => String(opt.id) === String(item.product_id));
+  const availableStock = selectedOption ? Math.max(0, Number(selectedOption.stock ?? 0)) : (selectedProd ? Math.max(0, Number(selectedProd.quantity || selectedProd.stock || 0)) : 0);
+  const currentQty = Number(item.quantity || 0);
+  const isOutOfStock = Boolean(item.product_id) && availableStock <= 0;
+  const isOverStock = Boolean(item.product_id) && availableStock > 0 && currentQty > availableStock;
 
   return (
     <div className="bg-slate-50/60 border border-slate-200/70 rounded-xl p-3 space-y-2.5 transition-all hover:border-slate-300">
@@ -1215,13 +1223,30 @@ const SaleItemRow = React.memo(function SaleItemRow({
           />
         </div>
 
-        {/* Quantity */}
-        <div className="w-[80px]">
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Qty</label>
+        {/* Quantity with live workspace stock guard */}
+        <div className="w-[88px]">
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[11px] font-semibold text-slate-600">Qty</label>
+            {Boolean(item.product_id) && (
+              <span
+                className={`text-[9.5px] font-bold ${
+                  isOutOfStock
+                    ? 'text-rose-600'
+                    : isOverStock
+                    ? 'text-rose-600'
+                    : 'text-slate-400'
+                }`}
+                title={`Available in current workspace: ${availableStock}`}
+              >
+                {isOutOfStock ? '0 Left' : `Max: ${availableStock}`}
+              </span>
+            )}
+          </div>
           <input
             id={`sale-item-qty-${idx}`}
             type="number"
             min="0"
+            max={item.product_id ? availableStock : undefined}
             placeholder=""
             value={item.quantity !== undefined && item.quantity !== null && item.quantity !== '' && item.quantity !== 0 ? item.quantity : ''}
             onChange={(e) => updateSaleItemQuantity(idx, e.target.value)}
@@ -1232,8 +1257,18 @@ const SaleItemRow = React.memo(function SaleItemRow({
               }
             }}
             disabled={!item.product_id || activeBreakdown.length > 1}
-            title={activeBreakdown.length > 1 ? "Quantity is calculated automatically from color breakdown below" : "Enter quantity (Press Enter to add next product)"}
-            className="w-full h-10 px-2 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl focus:border-teal-500 focus:outline-none disabled:opacity-70 text-center"
+            title={
+              activeBreakdown.length > 1
+                ? "Quantity is calculated automatically from color breakdown below"
+                : item.product_id
+                ? `Enter quantity (Available stock in workspace: ${availableStock})`
+                : "Select a product first"
+            }
+            className={`w-full h-10 px-2 text-xs font-bold bg-white border rounded-xl focus:outline-none disabled:opacity-70 text-center transition-colors ${
+              isOutOfStock || isOverStock
+                ? 'border-rose-400 bg-rose-50/50 text-rose-700 focus:border-rose-500'
+                : 'text-slate-800 border-slate-200 focus:border-teal-500'
+            }`}
           />
         </div>
 
@@ -1255,6 +1290,38 @@ const SaleItemRow = React.memo(function SaleItemRow({
           <Trash2 size={16} />
         </button>
       </div>
+
+      {/* Real-time Inline Stock Alerts */}
+      {Boolean(item.product_id) && isOutOfStock && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-medium">
+          <span className="flex items-center gap-1.5">
+            <AlertCircle size={13} className="text-rose-600 shrink-0" />
+            <span>Not enough stock for this product in this workspace. (Available: 0, Required: {currentQty || 1})</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => removeSaleItem(idx)}
+            className="text-[10.5px] font-bold text-rose-700 hover:text-rose-900 underline cursor-pointer"
+          >
+            Remove Item
+          </button>
+        </div>
+      )}
+      {Boolean(item.product_id) && isOverStock && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-medium">
+          <span className="flex items-center gap-1.5">
+            <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+            <span>Quantity ({currentQty}) exceeds available workspace stock ({availableStock}).</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => updateSaleItemQuantity(idx, availableStock)}
+            className="text-[10.5px] font-bold text-teal-800 bg-teal-100 hover:bg-teal-200 px-2 py-0.5 rounded cursor-pointer transition-colors shadow-2xs"
+          >
+            Adjust to Available ({availableStock})
+          </button>
+        </div>
+      )}
 
       {/* Invoice Model Name & Manufacturing Brand Customization */}
       {Boolean(item.product_id) && (
@@ -1344,48 +1411,68 @@ const SaleItemRow = React.memo(function SaleItemRow({
           {/* Split colour quantity allocation row */}
           {activeBreakdown.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 p-2 bg-white rounded-lg border border-slate-200">
-              {activeBreakdown.map((b) => (
-                <div key={b.color} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-800">{b.color}:</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => updateSaleItemColorQuantity(idx, b.color, Math.max(1, Number(b.qty || 1) - 1))}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-white hover:bg-slate-200 text-slate-700 font-black text-xs border border-slate-200 cursor-pointer"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      min="1"
-                      value={b.qty}
-                      onChange={(e) => updateSaleItemColorQuantity(idx, b.color, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          if (onQuantityEnter) onQuantityEnter(idx);
-                        }
-                      }}
-                      className="w-10 text-center text-xs font-black border border-slate-200 rounded px-1 py-0.5 focus:border-teal-500 focus:outline-none bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => updateSaleItemColorQuantity(idx, b.color, Number(b.qty || 0) + 1)}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-white hover:bg-slate-200 text-slate-700 font-black text-xs border border-slate-200 cursor-pointer"
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleSaleItemColor(idx, b.color)}
-                      className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer ml-0.5"
-                      title="Remove this colour"
-                    >
-                      <X size={12} />
-                    </button>
+              {activeBreakdown.map((b) => {
+                const colorStockQty = colorStockMap[b.color] !== undefined ? Number(colorStockMap[b.color]) : null;
+                const isColorOverStock = colorStockQty !== null && Number(b.qty || 0) > colorStockQty;
+                return (
+                  <div key={b.color} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-800">{b.color}:</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => updateSaleItemColorQuantity(idx, b.color, Math.max(1, Number(b.qty || 1) - 1))}
+                        className="w-5 h-5 flex items-center justify-center rounded bg-white hover:bg-slate-200 text-slate-700 font-black text-xs border border-slate-200 cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max={colorStockQty !== null ? colorStockQty : undefined}
+                        value={b.qty}
+                        onChange={(e) => updateSaleItemColorQuantity(idx, b.color, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (onQuantityEnter) onQuantityEnter(idx);
+                          }
+                        }}
+                        className={`w-10 text-center text-xs font-black border rounded px-1 py-0.5 focus:outline-none bg-white transition-colors ${
+                          isColorOverStock
+                            ? 'border-rose-400 bg-rose-50 text-rose-700 focus:border-rose-500'
+                            : 'border-slate-200 focus:border-teal-500'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        disabled={colorStockQty !== null && Number(b.qty || 0) >= colorStockQty}
+                        onClick={() => updateSaleItemColorQuantity(idx, b.color, Number(b.qty || 0) + 1)}
+                        className="w-5 h-5 flex items-center justify-center rounded bg-white hover:bg-slate-200 text-slate-700 font-black text-xs border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSaleItemColor(idx, b.color)}
+                        className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer ml-0.5"
+                        title="Remove this colour"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                    {isColorOverStock && (
+                      <button
+                        type="button"
+                        onClick={() => updateSaleItemColorQuantity(idx, b.color, colorStockQty)}
+                        className="text-[9.5px] font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 px-1 py-0.2 rounded cursor-pointer"
+                        title={`Cap to ${colorStockQty}`}
+                      >
+                        Max {colorStockQty}
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1436,15 +1523,22 @@ function SalesCreationWorkspace({
   title = 'Create sale',
   authedFetch,
   onOpenReturnModal,
+  customerBalanceInfo: propCustomerBalanceInfo,
+  setCustomerBalanceInfo: propSetCustomerBalanceInfo,
+  stockConstraintError,
+  setStockConstraintError,
+  setActivePage,
 }) {
   const [showBulkAddModal, setShowBulkAddModal] = useState(false);
   const [expensesExpanded, setExpensesExpanded] = useState((forms.sale?.expenses || []).length > 0);
-  const [customerBalanceInfo, setCustomerBalanceInfo] = useState({
+  const [localCustomerBalanceInfo, setLocalCustomerBalanceInfo] = useState({
     outstanding_balance: 0,
     advance_balance: 0,
     available_credits: 0,
     credit_notes: [],
   });
+  const customerBalanceInfo = propCustomerBalanceInfo !== undefined ? propCustomerBalanceInfo : localCustomerBalanceInfo;
+  const setCustomerBalanceInfo = propSetCustomerBalanceInfo || setLocalCustomerBalanceInfo;
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [applyCreditNote, setApplyCreditNote] = useState(false);
   const [appliedCreditInput, setAppliedCreditInput] = useState('');
@@ -1534,6 +1628,62 @@ function SalesCreationWorkspace({
   const expenses = Array.isArray(forms.sale?.expenses) ? forms.sale.expenses : [];
   const extraExpensesTotal = expenses.reduce((sum, exp) => sum + Math.max(Number(exp.amount || 0), 0), 0);
 
+  // Client-side Inventory Guard: Validate cart line items against live workspace stock
+  const cartStockValidation = useMemo(() => {
+    const productTotals = new Map();
+    (items || []).forEach((item, index) => {
+      if (item && item.product_id) {
+        const pid = String(item.product_id);
+        const qty = Number(item.quantity || 0);
+        const curr = productTotals.get(pid) || { totalQty: 0, items: [] };
+        curr.totalQty += qty;
+        curr.items.push(index);
+        productTotals.set(pid, curr);
+      }
+    });
+
+    const errors = [];
+    const warningsByItemIndex = {};
+
+    productTotals.forEach((dataItem, pid) => {
+      const opt = (salesProductOptions || []).find((o) => String(o.id) === pid);
+      const prod = (data.products || []).find((p) => String(p.id || p.product_id) === pid);
+      const avail = opt ? Math.max(0, Number(opt.stock || 0)) : (prod ? Math.max(0, Number(prod.quantity || prod.stock || 0)) : 0);
+      const prodName = opt?.clean_name || opt?.title || prod?.short_name || prod?.name || `Product #${pid}`;
+
+      if (dataItem.totalQty > avail) {
+        const err = {
+          productId: pid,
+          productName: prodName,
+          available: avail,
+          requested: dataItem.totalQty,
+          itemIndices: dataItem.items,
+          message: avail === 0
+            ? `Not enough stock for "${prodName}" in this workspace. (Available: 0, Required: ${dataItem.totalQty})`
+            : `Not enough stock for "${prodName}" in this workspace. (Available: ${avail}, Required: ${dataItem.totalQty})`,
+        };
+        errors.push(err);
+        dataItem.items.forEach((idx) => {
+          warningsByItemIndex[idx] = err;
+        });
+      }
+    });
+
+    return { errors, warningsByItemIndex, hasStockErrors: errors.length > 0 };
+  }, [items, salesProductOptions, data.products]);
+
+  const handleAdjustQuantityToAvailable = (productId, availableQty) => {
+    const targetIdx = (forms.sale?.items || []).findIndex((i) => String(i.product_id) === String(productId));
+    if (targetIdx !== -1) {
+      if (availableQty > 0) {
+        updateSaleItemQuantity(targetIdx, availableQty);
+      } else {
+        removeSaleItem(targetIdx);
+      }
+    }
+    if (setStockConstraintError) setStockConstraintError(null);
+  };
+
   // Accounting calculations with manual or auto-fetched previous balance
   const currentInvoiceTotal = productsTotal + extraExpensesTotal;
   const autoFetchedBalance = Number(customerBalanceInfo?.outstanding_balance || 0);
@@ -1617,6 +1767,81 @@ function SalesCreationWorkspace({
               <X size={14} /> Cancel Editing
             </button>
           )}
+        </div>
+      )}
+
+      {/* Prominent Stock Constraint / Inventory Guard Alert Banner with Action Options */}
+      {(stockConstraintError || cartStockValidation.hasStockErrors) && (
+        <div className="mb-4 bg-rose-50/95 border-2 border-rose-300 rounded-2xl p-4 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-rose-900">
+                  Stock Constraint in this Workspace
+                </h4>
+                <p className="text-xs text-rose-700 mt-0.5 leading-relaxed font-semibold">
+                  {stockConstraintError?.message || cartStockValidation.errors[0]?.message}
+                </p>
+              </div>
+            </div>
+            {setStockConstraintError && stockConstraintError && (
+              <button
+                type="button"
+                onClick={() => setStockConstraintError(null)}
+                className="text-rose-400 hover:text-rose-700 p-1 cursor-pointer rounded-lg hover:bg-rose-100"
+                title="Dismiss alert"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+
+          {/* Action Options Bar */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-rose-200/80">
+            {/* Option 1: Adjust Quantity to Available */}
+            {(() => {
+              const activeErr = stockConstraintError || cartStockValidation.errors[0];
+              if (!activeErr) return null;
+              const avail = activeErr.available !== undefined ? activeErr.available : 0;
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleAdjustQuantityToAvailable(activeErr.productId, avail)}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Check size={14} />
+                  <span>{avail > 0 ? `Adjust Quantity to Available (${avail})` : 'Remove Out-of-Stock Item'}</span>
+                </button>
+              );
+            })()}
+
+            {/* Option 2: Switch Workspace / Branch */}
+            <button
+              type="button"
+              onClick={() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                const locSelector = document.getElementById('shop-filter-select') || document.querySelector('.location-selector');
+                if (locSelector) locSelector.focus();
+              }}
+              className="px-3 py-1.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <Store size={14} className="text-slate-600" />
+              <span>Switch Workspace / Branch</span>
+            </button>
+
+            {/* Option 3: Create Stock Requisition */}
+            {setActivePage && (
+              <button
+                type="button"
+                onClick={() => setActivePage('order-stock')}
+                className="px-3 py-1.5 text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <Truck size={14} className="text-teal-600" />
+                <span>Create Stock Requisition</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -2307,24 +2532,75 @@ function SalesCreationWorkspace({
               </div>
             </div>
 
+            {/* Sidebar Stock Warning Alert */}
+            {(cartStockValidation.hasStockErrors || stockConstraintError) && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-1.5 text-rose-800 text-xs font-bold">
+                  <AlertCircle size={14} className="text-rose-600 shrink-0" />
+                  <span>Stock Constraints ({cartStockValidation.errors.length || 1})</span>
+                </div>
+                <p className="text-[11px] text-rose-700 leading-tight">
+                  {stockConstraintError?.message || cartStockValidation.errors[0]?.message}
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {(() => {
+                    const activeErr = stockConstraintError || cartStockValidation.errors[0];
+                    if (!activeErr) return null;
+                    const avail = activeErr.available !== undefined ? activeErr.available : 0;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustQuantityToAvailable(activeErr.productId, avail)}
+                        className="px-2 py-1 text-[10.5px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Adjust to Avail ({avail})
+                      </button>
+                    );
+                  })()}
+                  {setActivePage && (
+                    <button
+                      type="button"
+                      onClick={() => setActivePage('order-stock')}
+                      className="px-2 py-1 text-[10.5px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Requisition
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Create / Update Sale Action Button */}
             <div className="pt-2 space-y-2">
               <button
                 type="button"
-                disabled={saving || needsSpecificShop}
+                disabled={saving || needsSpecificShop || cartStockValidation.hasStockErrors}
                 onClick={() => submitSale(activeTab)}
                 className={`w-full h-11 rounded-xl text-white font-bold text-sm shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] ${
-                  forms.sale?.editing_sale_id
+                  cartStockValidation.hasStockErrors
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : forms.sale?.editing_sale_id
                     ? 'bg-amber-600 hover:bg-amber-700'
                     : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
+                title={cartStockValidation.hasStockErrors ? "Cannot submit sale: one or more items exceed available workspace stock" : undefined}
               >
-                {forms.sale?.editing_sale_id ? <Check size={18} /> : <Plus size={18} />}
-                <span>
-                  {saving
-                    ? (forms.sale?.editing_sale_id ? 'Updating Sale...' : 'Creating Sale...')
-                    : (forms.sale?.editing_sale_id ? 'Update Sale / Invoice' : 'Create Sale')}
-                </span>
+                {cartStockValidation.hasStockErrors ? (
+                  <>
+                    <AlertCircle size={18} />
+                    <span>Insufficient Stock ({cartStockValidation.errors.length})</span>
+                  </>
+                ) : forms.sale?.editing_sale_id ? (
+                  <>
+                    <Check size={18} />
+                    <span>{saving ? 'Updating Sale...' : 'Update Sale / Invoice'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus size={18} />
+                    <span>{saving ? 'Creating Sale...' : 'Create Sale'}</span>
+                  </>
+                )}
               </button>
               {forms.sale?.editing_sale_id && cancelEditSale && (
                 <button
@@ -2586,6 +2862,13 @@ function App() {
   });
   const [selectedShop, setSelectedShop] = useState('');
   const [forms, setForms] = useState(initialForms);
+  const [customerBalanceInfo, setCustomerBalanceInfo] = useState({
+    outstanding_balance: 0,
+    advance_balance: 0,
+    available_credits: 0,
+    credit_notes: [],
+  });
+  const [stockConstraintError, setStockConstraintError] = useState(null);
   const [catalogFilters, setCatalogFilters] = useState({ search: '', brand: '', category: '', colour: '', shopId: '' });
   const [stockFilters, setStockFilters] = useState({ search: '', brand: '', category: '', colour: '', status: '', shopkeeperId: '', ownership: '' });
   const [brandSearch, setBrandSearch] = useState('');
@@ -5372,6 +5655,37 @@ function App() {
       return showToast('Expense amounts cannot be negative', 'error');
     }
 
+    // Client-side Inventory Guard: Validate item quantities against available workspace stock
+    const isEditing = Boolean(forms.sale.editing_sale_id);
+    if (!isEditing) {
+      const requestedQtyByProduct = new Map();
+      items.forEach((item) => {
+        if (item.product_id) {
+          const pid = String(item.product_id);
+          requestedQtyByProduct.set(pid, (requestedQtyByProduct.get(pid) || 0) + Number(item.quantity || 0));
+        }
+      });
+
+      for (const [pid, reqQty] of requestedQtyByProduct.entries()) {
+        const opt = (salesProductOptions || []).find((o) => String(o.id) === pid);
+        const prod = (data.products || []).find((p) => String(p.id || p.product_id) === pid);
+        const availStock = opt ? Math.max(0, Number(opt.stock || 0)) : (prod ? Math.max(0, Number(prod.quantity || prod.stock || 0)) : 0);
+        const prodName = opt?.clean_name || opt?.title || prod?.short_name || prod?.name || `Selected Product`;
+
+        if (reqQty > availStock) {
+          const stockErr = `Not enough stock for "${prodName}" in this workspace. (Available: ${availStock}, Required: ${reqQty})`;
+          setStockConstraintError({
+            productName: prodName,
+            productId: pid,
+            available: availStock,
+            requested: reqQty,
+            message: stockErr,
+          });
+          return showToast(stockErr, 'error');
+        }
+      }
+    }
+
     const productsTotal = items.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
     const extraExpensesTotal = expenses.reduce((sum, exp) => sum + Math.max(Number(exp.amount || 0), 0), 0);
     const calculatedTotal = productsTotal + extraExpensesTotal;
@@ -5386,7 +5700,6 @@ function App() {
 
     try {
       setSaving(true);
-      const isEditing = Boolean(forms.sale.editing_sale_id);
       const endpoint = isEditing ? `/sales/${forms.sale.editing_sale_id}` : '/sales';
       const method = isEditing ? 'PUT' : 'POST';
 
@@ -5436,6 +5749,7 @@ function App() {
         }),
       });
 
+      setStockConstraintError(null);
       setCustomerBalanceInfo({ outstanding_balance: 0, advance_balance: 0, available_credits: 0, credit_notes: [] });
       setForms((prev) => ({
         ...prev,
@@ -5465,7 +5779,33 @@ function App() {
       }
       await loadTab('dashboard', shopId);
     } catch (error) {
-      showToast(error.message || 'Unable to create sale right now', 'error');
+      const errMsg = error.message || 'Unable to create sale right now';
+      // Detect insufficient stock error from API / concurrent updates
+      // Format: Not enough stock for "ProductName" in this workspace. (Available: X, Requested: Y)
+      const stockMatch = errMsg.match(/Not enough stock for ["']?([^"']+)["']? in this workspace\.\s*\(Available:\s*(\d+),\s*(?:Requested|Required):\s*(\d+)\)/i);
+      if (stockMatch) {
+        const [, prodName, availStr, reqStr] = stockMatch;
+        const available = parseInt(availStr, 10);
+        const requested = parseInt(reqStr, 10);
+        const matchingItem = items.find((i) => {
+          const opt = (salesProductOptions || []).find((o) => String(o.id) === String(i.product_id));
+          const prod = (data.products || []).find((p) => String(p.id || p.product_id) === String(i.product_id));
+          const name = opt?.clean_name || opt?.title || prod?.short_name || prod?.name || '';
+          return name.toLowerCase() === prodName.toLowerCase() || String(i.custom_product_name || '').toLowerCase() === prodName.toLowerCase();
+        });
+
+        setStockConstraintError({
+          productName: prodName,
+          productId: matchingItem?.product_id,
+          available,
+          requested,
+          message: errMsg,
+        });
+
+        // Refresh stock in background to sync live quantities
+        loadSalesPage({ currentShop: shopId });
+      }
+      showToast(errMsg, 'error');
     } finally {
       setSaving(false);
     }
@@ -8551,6 +8891,11 @@ function App() {
                     title={data.shops.find((location) => String(location.id) === String(shopId))?.location_type === 'warehouse' ? 'Create Warehouse sale' : 'Create sale'}
                     authedFetch={authedFetch}
                     onOpenReturnModal={openSalesReturnModal}
+                    customerBalanceInfo={customerBalanceInfo}
+                    setCustomerBalanceInfo={setCustomerBalanceInfo}
+                    stockConstraintError={stockConstraintError}
+                    setStockConstraintError={setStockConstraintError}
+                    setActivePage={setActivePage}
                   />
                 </div>
                 <div className="catalog-toolbar panel sales-toolbar">
