@@ -101,9 +101,14 @@ export default function AddToolSpareModal({
   // Sync initialCategory when modal opens
   useEffect(() => {
     if (isOpen) {
-      setCategory(initialCategory === 'spares' ? 'spares' : 'tools');
+      if (initialCategory === 'battery') {
+        setCategory('spares');
+        setProductCategory('Battery');
+      } else {
+        setCategory(initialCategory === 'spares' ? 'spares' : 'tools');
+        setProductCategory('');
+      }
       setProductName('');
-      setProductCategory('');
       setBrand('');
       setSupplierId('');
       setQuantity('1');

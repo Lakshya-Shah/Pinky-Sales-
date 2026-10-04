@@ -539,19 +539,21 @@ export default function PricesPage({
             <span>Export Excel</span>
           </button>
 
-          {['tools', 'spares'].includes(categoryType) && typeof onOpenAddToolSpare === 'function' && role !== 'customer' && (
+          {['tools', 'spares', 'battery'].includes(categoryType) && typeof onOpenAddToolSpare === 'function' && role !== 'customer' && (
             <button
               type="button"
               onClick={() => onOpenAddToolSpare(categoryType)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-sm cursor-pointer active:scale-95 ${
                 categoryType === 'tools'
                   ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                  : categoryType === 'battery'
+                  ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
                   : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
               }`}
-              title={`Add a new ${categoryType === 'tools' ? 'tool' : 'spare'} and initial stock`}
+              title={`Add a new ${categoryType === 'tools' ? 'tool' : categoryType === 'battery' ? 'battery' : 'spare'} and initial stock`}
             >
               <Plus className="w-4 h-4" />
-              <span>Add {categoryType === 'tools' ? 'Tool' : 'Spare'}</span>
+              <span>Add {categoryType === 'tools' ? 'Tool' : categoryType === 'battery' ? 'Battery' : 'Spare'}</span>
             </button>
           )}
         </div>

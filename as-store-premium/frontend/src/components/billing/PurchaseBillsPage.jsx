@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShoppingBag, Plus, Search, Eye, X, AlertCircle, RefreshCw,
-  ChevronDown, ChevronUp, CreditCard, Loader2, Check, Trash2, Package, Pencil
+  ChevronDown, ChevronUp, CreditCard, Loader2, Check, Trash2, Package, Pencil,
+  Truck, Building2
 } from 'lucide-react';
 import NewPurchaseBillModal from './NewPurchaseBillModal';
+import WarehouseBillsPage from './WarehouseBillsPage';
 
 const money = (v) => Math.round(Number(v || 0) * 100) / 100;
 const currency = (v) => `₹${money(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -112,8 +114,13 @@ export default function PurchaseBillsPage({
   shopId: propShopId,
   shops = [],
   warehouse = null,
+  customers = [],
+  findBestMatchingBranchCustomer,
   role = '',
+  printTaxInvoicePDF,
+  formatDateDMY,
 }) {
+  const [billSourceTab, setBillSourceTab] = useState(role === 'shopkeeper' ? 'warehouse' : 'suppliers');
   const [bills, setBills] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -187,48 +194,110 @@ export default function PurchaseBillsPage({
 
   return (
     <div style={{ maxWidth: 1150, margin: '0 auto', padding: '16px 12px', fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
-            <ShoppingBag size={18} />
-          </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#0f172a', letterSpacing: -0.4 }}>Purchase Bills</h1>
-            <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>{total} bill{total !== 1 ? 's' : ''} · vendor payables</p>
-          </div>
-        </div>
-        <button onClick={() => setShowForm(true)}
+      {/* Top Source Switcher: Warehouse Dispatches vs Supplier Bills */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, background: '#f1f5f9', padding: 5, borderRadius: 16, width: 'fit-content', border: '1px solid #e2e8f0' }}>
+        <button
+          type="button"
+          onClick={() => setBillSourceTab('warehouse')}
           style={{
-            padding: '10px 20px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: 'linear-gradient(135deg,#7c3aed,#6366f1)', color: '#fff', fontSize: 13, fontWeight: 700,
-            display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(99,102,241,0.4)'
-          }}>
-          <Plus size={15} /> New Bill
+            padding: '8px 18px',
+            borderRadius: 12,
+            border: 'none',
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            background: billSourceTab === 'warehouse' ? '#ffffff' : 'transparent',
+            color: billSourceTab === 'warehouse' ? '#4f46e5' : '#64748b',
+            boxShadow: billSourceTab === 'warehouse' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Truck size={15} /> Inward from Warehouse (Branch Bills)
+        </button>
+        <button
+          type="button"
+          onClick={() => setBillSourceTab('suppliers')}
+          style={{
+            padding: '8px 18px',
+            borderRadius: 12,
+            border: 'none',
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            background: billSourceTab === 'suppliers' ? '#ffffff' : 'transparent',
+            color: billSourceTab === 'suppliers' ? '#4f46e5' : '#64748b',
+            boxShadow: billSourceTab === 'suppliers' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Building2 size={15} /> External Supplier Bills
         </button>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: '1 1 220px' }}>
-          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-          <input placeholder="Search bills or vendor…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-            style={{ width: '100%', padding: '9px 10px 9px 34px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, background: '#f8fafc', boxSizing: 'border-box' }} />
-        </div>
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-          style={{ padding: '9px 12px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, fontWeight: 600, background: '#f8fafc', color: '#0f172a' }}>
-          <option value="">All Statuses</option>
-          <option value="open">Open</option>
-          <option value="partially_paid">Partial</option>
-          <option value="paid">Paid</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-        <button onClick={fetchBills} style={{ padding: '9px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#475569', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-        </button>
-      </div>
+      {billSourceTab === 'warehouse' ? (
+        <WarehouseBillsPage
+          session={session}
+          role={role}
+          shopId={shopId}
+          shops={shops}
+          warehouse={warehouse}
+          customers={customers}
+          findBestMatchingBranchCustomer={findBestMatchingBranchCustomer}
+          api={api}
+          setGlobalToast={setGlobalToast}
+          printTaxInvoicePDF={printTaxInvoicePDF}
+          formatDateDMY={formatDateDMY}
+        />
+      ) : (
+        <>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
+                <ShoppingBag size={18} />
+              </div>
+              <div>
+                <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#0f172a', letterSpacing: -0.4 }}>Supplier Purchase Bills</h1>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>{total} bill{total !== 1 ? 's' : ''} · vendor payables</p>
+              </div>
+            </div>
+            <button onClick={() => setShowForm(true)}
+              style={{
+                padding: '10px 20px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                background: 'linear-gradient(135deg,#7c3aed,#6366f1)', color: '#fff', fontSize: 13, fontWeight: 700,
+                display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(99,102,241,0.4)'
+              }}>
+              <Plus size={15} /> New Bill
+            </button>
+          </div>
 
-      {/* Bills list */}
+          {/* Filters */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: '1 1 220px' }}>
+              <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <input placeholder="Search bills or vendor…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                style={{ width: '100%', padding: '9px 10px 9px 34px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, background: '#f8fafc', boxSizing: 'border-box' }} />
+            </div>
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+              style={{ padding: '9px 12px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, fontWeight: 600, background: '#f8fafc', color: '#0f172a' }}>
+              <option value="">All Statuses</option>
+              <option value="open">Open</option>
+              <option value="partially_paid">Partial</option>
+              <option value="paid">Paid</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <button onClick={fetchBills} style={{ padding: '9px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#475569', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
+
+          {/* Bills list */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 48, color: '#6366f1' }}>
           <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite', marginBottom: 10 }} />
@@ -395,6 +464,8 @@ export default function PurchaseBillsPage({
           />
         )}
       </AnimatePresence>
+        </>
+      )}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

@@ -644,15 +644,108 @@ const getShopsForUser = async (user) => {
   const shopId = isShopStaffRole(user.role) ? Number(user.shop_id) : null;
   return allRecords(`
     SELECT sh.*,
+      COALESCE(c_match.id, sh.customer_id) AS effective_customer_id,
+      COALESCE(c_match.name, sh.name) AS customer_name,
       COALESCE((SELECT SUM(st.quantity) FROM stock st WHERE st.shop_id = sh.id), 0) AS stock,
-      ${isSuper
-        ? '(COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0))'
-        : 'CASE WHEN sh.id = ? THEN (COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0)) ELSE 0 END'
-      } AS pending
+      COALESCE((
+        SELECT COUNT(*) FROM sales s 
+        WHERE s.customer_id = COALESCE(c_match.id, sh.customer_id) 
+          AND s.status NOT IN ('cancelled', 'void')
+      ), 0) AS warehouse_bills_count,
+      COALESCE((
+        SELECT SUM(COALESCE(NULLIF(s.current_invoice_total, 0), s.total_amount)) 
+        FROM sales s 
+        WHERE s.customer_id = COALESCE(c_match.id, sh.customer_id) 
+          AND s.status NOT IN ('cancelled', 'void')
+      ), 0) AS warehouse_bills_total,
+      COALESCE((
+        SELECT SUM(pm.amount) 
+        FROM payments pm 
+        WHERE pm.customer_id = COALESCE(c_match.id, sh.customer_id) 
+          AND pm.reversed_at IS NULL 
+          AND COALESCE(pm.payment_mode, '') != 'credit_note'
+      ), 0) AS warehouse_bills_paid,
+      GREATEST(0, (
+        COALESCE(c_match.opening_balance, 0)
+        + COALESCE((
+            SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) 
+            FROM sales s2 
+            WHERE s2.customer_id = COALESCE(c_match.id, sh.customer_id) 
+              AND s2.status NOT IN ('cancelled', 'void')
+          ), 0)
+        - COALESCE((
+            SELECT SUM(pm2.amount) 
+            FROM payments pm2 
+            WHERE pm2.customer_id = COALESCE(c_match.id, sh.customer_id) 
+              AND pm2.reversed_at IS NULL 
+              AND COALESCE(pm2.payment_mode, '') != 'credit_note'
+          ), 0)
+        - COALESCE((
+            SELECT SUM(cn2.amount) 
+            FROM credit_notes cn2 
+            WHERE cn2.customer_id = COALESCE(c_match.id, sh.customer_id) 
+              AND cn2.status != 'cancelled'
+          ), 0)
+      )) AS warehouse_bills_pending,
+      CASE 
+        WHEN sh.location_type = 'warehouse' THEN
+          (COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0))
+        ELSE
+          GREATEST(
+            GREATEST(0, (
+              COALESCE(c_match.opening_balance, 0)
+              + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = COALESCE(c_match.id, sh.customer_id) AND s2.status NOT IN ('cancelled', 'void')), 0)
+              - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = COALESCE(c_match.id, sh.customer_id) AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') != 'credit_note'), 0)
+              - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = COALESCE(c_match.id, sh.customer_id) AND cn2.status != 'cancelled'), 0)
+            )),
+            (COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0))
+          )
+      END AS pending
     FROM shops sh
+    LEFT JOIN LATERAL (
+      SELECT c.id, c.name, c.opening_balance
+      FROM customers c
+      WHERE 
+        (
+          REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore')
+          AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') IN ('asstore', 'as') OR c.mobile LIKE '%9979769700%')
+        )
+        OR (
+          REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps2'
+          AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps2' OR c.mobile LIKE '%9904269700%')
+        )
+        OR (
+          REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps1'
+          AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps1' OR c.mobile LIKE '%9099569700%')
+        )
+        OR (
+          REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') NOT IN ('as', 'asstore', 'ps2', 'ps1')
+          AND (
+            (sh.customer_id IS NOT NULL AND c.id = sh.customer_id)
+            OR c.branch_shop_id = sh.id
+            OR REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g')
+            OR (sh.phone IS NOT NULL AND sh.phone != '' AND c.mobile = sh.phone)
+            OR (sh.area IS NOT NULL AND sh.area != '' AND LOWER(TRIM(c.address)) = LOWER(TRIM(sh.area)))
+          )
+        )
+      ORDER BY 
+        CASE 
+          WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore') AND REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'asstore' THEN 1
+          WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore') AND c.mobile LIKE '%9979769700%' THEN 2
+          WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps2' AND REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps2' THEN 1
+          WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps1' AND REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps1' THEN 1
+          WHEN REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') THEN 2
+          WHEN sh.customer_id IS NOT NULL AND c.id = sh.customer_id THEN 3
+          WHEN c.branch_shop_id = sh.id THEN 4
+          ELSE 5
+        END ASC,
+        (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')) DESC,
+        c.id ASC
+      LIMIT 1
+    ) c_match ON true
     ${shopId ? "WHERE sh.id = ? OR sh.location_type = 'warehouse'" : ''}
     ORDER BY CASE WHEN sh.location_type = 'warehouse' THEN 0 ELSE 1 END, sh.id ASC
-  `, shopId ? (isSuper ? [shopId] : [shopId, shopId]) : []);
+  `, shopId ? [shopId] : []);
 };
 const batchAccessSql = (user, alias = 'ib') => isShopStaffRole(user.role)
   ? ` AND (${alias}.assigned_user_id IS NULL OR ${alias}.assigned_user_id = ${Number(user.id)})`
@@ -1182,24 +1275,348 @@ app.get('/api/shops', authenticateToken, async (req, res) => {
   res.json(await getShopsForUser(req.user));
 });
 
+app.get('/api/shops/all-branch-bills', authenticateToken, requireShopStaff, async (req, res) => {
+  try {
+    const branchShops = await allRecords(`
+      SELECT sh.id AS shop_id, sh.name AS shop_name, sh.area AS shop_area,
+             COALESCE(c_match.id, sh.customer_id) AS customer_id
+      FROM shops sh
+      LEFT JOIN LATERAL (
+        SELECT c.id FROM customers c 
+        WHERE 
+          (
+            REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore')
+            AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') IN ('asstore', 'as') OR c.mobile LIKE '%9979769700%')
+          )
+          OR (
+            REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps2'
+            AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps2' OR c.mobile LIKE '%9904269700%')
+          )
+          OR (
+            REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps1'
+            AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps1' OR c.mobile LIKE '%9099569700%')
+          )
+          OR (
+            REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') NOT IN ('as', 'asstore', 'ps2', 'ps1')
+            AND (
+              (sh.customer_id IS NOT NULL AND c.id = sh.customer_id)
+              OR c.branch_shop_id = sh.id 
+              OR REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g')
+              OR (sh.phone IS NOT NULL AND sh.phone != '' AND c.mobile = sh.phone)
+              OR (sh.area IS NOT NULL AND sh.area != '' AND LOWER(TRIM(c.address)) = LOWER(TRIM(sh.area)))
+            )
+          )
+        ORDER BY 
+          CASE 
+            WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore') AND REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'asstore' THEN 1
+            WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore') AND c.mobile LIKE '%9979769700%' THEN 2
+            WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps2' AND REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps2' THEN 1
+            WHEN REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps1' AND REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps1' THEN 1
+            WHEN REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') THEN 2
+            WHEN sh.customer_id IS NOT NULL AND c.id = sh.customer_id THEN 3
+            WHEN c.branch_shop_id = sh.id THEN 4
+            ELSE 5
+          END ASC,
+          (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')) DESC,
+          c.id ASC LIMIT 1
+      ) c_match ON true
+      WHERE sh.location_type != 'warehouse'
+    `);
+
+    const customerIds = branchShops.map(b => b.customer_id).filter(Boolean);
+    if (!customerIds.length) {
+      return res.json({ bills: [], shops: branchShops, summary: { total_bills: 0, total_amount: 0, total_pending: 0 } });
+    }
+
+    const bills = await allRecords(`
+      SELECT sa.*,
+        COALESCE(si_agg.items, '[]'::json) AS items,
+        sh.name AS warehouse_name,
+        c.name AS customer_name,
+        c.mobile AS customer_mobile,
+        c.address AS customer_address,
+        target_sh.id AS branch_shop_id,
+        target_sh.name AS branch_name,
+        target_sh.area AS branch_area
+      FROM sales sa
+      JOIN shops sh ON sh.id = sa.shop_id
+      JOIN customers c ON c.id = sa.customer_id
+      LEFT JOIN shops target_sh ON (
+        (REGEXP_REPLACE(LOWER(target_sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore') AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') IN ('asstore', 'as') OR c.mobile LIKE '%9979769700%'))
+        OR (REGEXP_REPLACE(LOWER(target_sh.name), '[^a-z0-9]', '', 'g') = 'ps2' AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps2' OR c.mobile LIKE '%9904269700%'))
+        OR (REGEXP_REPLACE(LOWER(target_sh.name), '[^a-z0-9]', '', 'g') = 'ps1' AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps1' OR c.mobile LIKE '%9099569700%'))
+        OR (
+          REGEXP_REPLACE(LOWER(target_sh.name), '[^a-z0-9]', '', 'g') NOT IN ('as', 'asstore', 'ps2', 'ps1')
+          AND (
+            target_sh.customer_id = c.id 
+            OR c.branch_shop_id = target_sh.id
+            OR REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = REGEXP_REPLACE(LOWER(target_sh.name), '[^a-z0-9]', '', 'g')
+          )
+        )
+      )
+      LEFT JOIN (
+        SELECT si.sale_id, json_agg(json_build_object(
+          'id', si.id,
+          'product_id', si.product_id,
+          'quantity', si.quantity,
+          'unit_price', si.unit_price,
+          'total_price', si.total_price,
+          'colour', si.colour,
+          'name', COALESCE(si.custom_product_name, p.short_name, p.name),
+          'product_name', COALESCE(si.custom_product_name, p.short_name, p.name),
+          'brand', p.brand,
+          'category', COALESCE(p.part_category, p.category, 'General')
+        ) ORDER BY si.id ASC) AS items
+        FROM sale_items si
+        JOIN products p ON p.id = si.product_id
+        GROUP BY si.sale_id
+      ) si_agg ON si_agg.sale_id = sa.id
+      WHERE sa.customer_id = ANY($1::int[]) AND sa.status NOT IN ('cancelled', 'void')
+      ORDER BY COALESCE(sa.invoice_date::TEXT, sa.sale_date) DESC, sa.id DESC
+    `, [customerIds]);
+
+    const summary = {
+      total_bills: bills.length,
+      total_amount: bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+      total_paid: bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0),
+      total_pending: bills.reduce((sum, b) => sum + Number(b.pending_amount || 0), 0),
+    };
+
+    res.json({ bills, shops: branchShops, summary });
+  } catch (err) {
+    console.error('Error fetching all branch bills:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/warehouse-bills/my-branch', authenticateToken, requireShopStaff, async (req, res) => {
+  const shopId = isShopStaffRole(req.user.role) ? Number(req.user.shop_id) : (Number(req.query.shopId) || null);
+  if (!shopId) return res.status(400).json({ error: 'Shop ID required.' });
+  return handleShopWarehouseBills(req, res, shopId);
+});
+
+app.get('/api/shops/:id/warehouse-bills', authenticateToken, requireShopStaff, async (req, res) => {
+  try {
+    let targetShopId = Number(req.params.id);
+    if ((!targetShopId || isNaN(targetShopId)) && isShopStaffRole(req.user.role)) {
+      targetShopId = Number(req.user.shop_id);
+    }
+    // If shopkeeper, enforce their own assigned branch shop
+    if (isShopStaffRole(req.user.role) && req.user.role !== 'superadmin') {
+      targetShopId = Number(req.user.shop_id);
+    }
+    return handleShopWarehouseBills(req, res, targetShopId);
+  } catch (err) {
+    console.error('Error fetching shop warehouse bills:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function handleShopWarehouseBills(req, res, targetShopId) {
+  try {
+    const shop = await getRecord('SELECT * FROM shops WHERE id = ?', [targetShopId]);
+    if (!shop) return res.status(404).json({ error: 'Shop not found.' });
+
+    const normShop = String(shop.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanShopPhone = String(shop.phone || '').replace(/[^0-9]/g, '');
+
+    // Allow explicit customerId override from query if valid
+    const requestedCustId = Number(req.query.customerId);
+    let customerId = null;
+
+    if (requestedCustId && Number.isInteger(requestedCustId) && requestedCustId > 0) {
+      const explicitCust = await getRecord('SELECT * FROM customers WHERE id = ?', [requestedCustId]);
+      if (explicitCust) {
+        customerId = explicitCust.id;
+        await runQuery('UPDATE shops SET customer_id = ? WHERE id = ?', [customerId, targetShopId]);
+        await runQuery('UPDATE customers SET branch_shop_id = NULL WHERE branch_shop_id = ? AND id != ?', [targetShopId, customerId]);
+        await runQuery('UPDATE customers SET branch_shop_id = ? WHERE id = ?', [targetShopId, customerId]);
+      }
+    }
+
+    if (!customerId) {
+      // 1. Conclusive matching for known branches
+      let matchedCust = null;
+      if (normShop === 'as' || normShop === 'asstore') {
+        matchedCust = await getRecord(`
+          SELECT c.id, c.name, c.mobile, c.address
+          FROM customers c
+          WHERE REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') IN ('asstore', 'as')
+             OR c.mobile LIKE '%9979769700%'
+          ORDER BY 
+            CASE 
+              WHEN REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'asstore' THEN 1
+              WHEN c.mobile LIKE '%9979769700%' THEN 2
+              ELSE 3
+            END ASC,
+            c.id ASC
+          LIMIT 1
+        `);
+      } else if (normShop === 'ps2') {
+        matchedCust = await getRecord(`
+          SELECT c.id, c.name, c.mobile, c.address
+          FROM customers c
+          WHERE REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps2'
+             OR c.mobile LIKE '%9904269700%'
+          ORDER BY c.id ASC
+          LIMIT 1
+        `);
+      } else if (normShop === 'ps1') {
+        matchedCust = await getRecord(`
+          SELECT c.id, c.name, c.mobile, c.address
+          FROM customers c
+          WHERE REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps1'
+             OR c.mobile LIKE '%9099569700%'
+          ORDER BY c.id ASC
+          LIMIT 1
+        `);
+      }
+
+      // 2. Fallback to scoring for any other branches
+      if (!matchedCust) {
+        matchedCust = await getRecord(`
+          SELECT c.id, c.name, c.mobile, c.address,
+                 (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')) AS sales_count,
+                 (
+                   CASE 
+                     WHEN ($1 != '' AND (REPLACE(c.mobile, ' ', '') LIKE '%' || $1 OR $1 LIKE '%' || REPLACE(c.mobile, ' ', ''))) THEN 1000
+                     WHEN REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = $2 THEN 800
+                     WHEN ($3 != '' AND (LOWER(TRIM(c.address)) LIKE '%' || LOWER(TRIM($3)) || '%' OR LOWER(TRIM($3)) LIKE '%' || LOWER(TRIM(c.address)) || '%')) THEN 400
+                     ELSE 0
+                   END
+                 ) AS match_score
+          FROM customers c
+          WHERE 
+            ($1 != '' AND (REPLACE(c.mobile, ' ', '') LIKE '%' || $1 OR $1 LIKE '%' || REPLACE(c.mobile, ' ', '')))
+            OR REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = $2
+          ORDER BY 
+            match_score DESC,
+            (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')) DESC,
+            c.id ASC
+          LIMIT 1
+        `, [cleanShopPhone, normShop, shop.area || '']);
+      }
+
+      if (matchedCust?.id) {
+        customerId = matchedCust.id;
+        await runQuery('UPDATE shops SET customer_id = ? WHERE id = ?', [matchedCust.id, targetShopId]);
+        await runQuery('UPDATE customers SET branch_shop_id = NULL WHERE branch_shop_id = ? AND id != ?', [targetShopId, matchedCust.id]);
+        await runQuery('UPDATE customers SET branch_shop_id = ? WHERE id = ?', [targetShopId, matchedCust.id]);
+      } else {
+        customerId = shop.customer_id;
+      }
+    }
+
+    if (!customerId) {
+      return res.json({
+        shop,
+        customer: null,
+        summary: { total_invoices: 0, total_amount: 0, total_paid: 0, pending_due: 0, opening_balance: 0 },
+        bills: [],
+      });
+    }
+
+    const customer = await getRecord('SELECT * FROM customers WHERE id = ?', [customerId]);
+    
+    // Query all sales invoices from warehouse to this branch customer
+    const bills = await allRecords(`
+      SELECT sa.*,
+        COALESCE(si_agg.items, '[]'::json) AS items,
+        sh.name AS warehouse_name,
+        c.name AS customer_name,
+        c.mobile AS customer_mobile,
+        c.address AS customer_address
+      FROM sales sa
+      JOIN shops sh ON sh.id = sa.shop_id
+      JOIN customers c ON c.id = sa.customer_id
+      LEFT JOIN (
+        SELECT si.sale_id, json_agg(json_build_object(
+          'id', si.id,
+          'product_id', si.product_id,
+          'quantity', si.quantity,
+          'unit_price', si.unit_price,
+          'total_price', si.total_price,
+          'colour', si.colour,
+          'name', COALESCE(si.custom_product_name, p.short_name, p.name),
+          'product_name', COALESCE(si.custom_product_name, p.short_name, p.name),
+          'brand', p.brand,
+          'category', COALESCE(p.part_category, p.category, 'General')
+        ) ORDER BY si.id ASC) AS items
+        FROM sale_items si
+        JOIN products p ON p.id = si.product_id
+        GROUP BY si.sale_id
+      ) si_agg ON si_agg.sale_id = sa.id
+      WHERE sa.customer_id = $1 AND sa.status NOT IN ('cancelled', 'void')
+      ORDER BY COALESCE(sa.invoice_date::TEXT, sa.sale_date) DESC, sa.id DESC
+    `, [customerId]);
+
+    const bal = await getCustomerTotalOutstanding(customerId);
+
+    const summary = {
+      total_invoices: bills.length,
+      total_amount: bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+      total_paid: bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0),
+      pending_due: bal.total_outstanding,
+      opening_balance: bal.opening_balance,
+    };
+
+    res.json({
+      shop,
+      customer,
+      summary,
+      bills,
+    });
+  } catch (err) {
+    console.error('Error fetching shop warehouse bills:', err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
 app.post('/api/shops', authenticateToken, requireSuperAdmin, async (req, res) => {
-  const { name, area, address, phone } = req.body;
+  const { name, area, address, phone, customer_id } = req.body;
   if (!name || !area) return res.status(400).json({ error: 'Shop name and area are required.' });
-  const result = await runQuery("INSERT INTO shops (name, area, address, phone, location_type) VALUES (?, ?, ?, ?, 'shop')", [name, area, address || '', phone || '']);
+  let linkedCustomerId = customer_id ? Number(customer_id) : null;
+  const result = await runQuery("INSERT INTO shops (name, area, address, phone, location_type, customer_id) VALUES (?, ?, ?, ?, 'shop', ?)", [name, area, address || '', phone || '', linkedCustomerId]);
+
+  if (!linkedCustomerId) {
+    const warehouse = await getRecord("SELECT id FROM shops WHERE location_type = 'warehouse' LIMIT 1");
+    if (warehouse) {
+      const newCust = await runQuery(
+        "INSERT INTO customers (shop_id, name, mobile, address, customer_type, branch_shop_id) VALUES (?, ?, ?, ?, 'wholesaler', ?)",
+        [warehouse.id, name, phone || '', area || '', result.id]
+      );
+      linkedCustomerId = newCust.id;
+      await runQuery('UPDATE shops SET customer_id = ? WHERE id = ?', [linkedCustomerId, result.id]);
+    }
+  } else {
+    await runQuery('UPDATE customers SET branch_shop_id = ? WHERE id = ?', [result.id, linkedCustomerId]);
+  }
+
   const products = await allRecords('SELECT id FROM products');
   for (const product of products) {
     await runQuery('INSERT INTO stock (shop_id, product_id, quantity) VALUES (?, ?, 0) ON CONFLICT(shop_id, product_id) DO NOTHING', [result.id, product.id]);
   }
   await audit(req, 'Created shop', 'shop', result.id, name);
-  res.status(201).json({ id: result.id, name, area, address, phone });
+  res.status(201).json({ id: result.id, name, area, address, phone, customer_id: linkedCustomerId });
 });
 
 app.put('/api/shops/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
-  const { name, area, address, phone, status } = req.body;
-  await runQuery(
-    'UPDATE shops SET name = ?, area = ?, address = ?, phone = ?, status = ? WHERE id = ?',
-    [name, area, address || '', phone || '', status || 'active', req.params.id]
-  );
+  const { name, area, address, phone, status, customer_id } = req.body;
+  const linkedCustomerId = customer_id !== undefined ? (customer_id ? Number(customer_id) : null) : undefined;
+  if (linkedCustomerId !== undefined) {
+    await runQuery(
+      'UPDATE shops SET name = ?, area = ?, address = ?, phone = ?, status = ?, customer_id = ? WHERE id = ?',
+      [name, area, address || '', phone || '', status || 'active', linkedCustomerId, req.params.id]
+    );
+    if (linkedCustomerId) {
+      await runQuery('UPDATE customers SET branch_shop_id = ? WHERE id = ?', [req.params.id, linkedCustomerId]);
+    }
+  } else {
+    await runQuery(
+      'UPDATE shops SET name = ?, area = ?, address = ?, phone = ?, status = ? WHERE id = ?',
+      [name, area, address || '', phone || '', status || 'active', req.params.id]
+    );
+  }
   await audit(req, 'Updated shop', 'shop', req.params.id, name);
   res.json({ success: true });
 });

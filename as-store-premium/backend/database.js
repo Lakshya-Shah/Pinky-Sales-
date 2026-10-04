@@ -240,6 +240,10 @@ export const initDatabase = async () => {
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES shops(id) ON DELETE CASCADE;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
       ALTER TABLE suppliers DROP CONSTRAINT IF EXISTS suppliers_name_key;
+      ALTER TABLE shops ADD COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_shop_id INTEGER REFERENCES shops(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_shops_customer_id ON shops(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_customers_branch_shop_id ON customers(branch_shop_id);
       CREATE UNIQUE INDEX IF NOT EXISTS suppliers_shop_name_unique_idx ON suppliers (COALESCE(shop_id, 0), LOWER(TRIM(name)));
       CREATE INDEX IF NOT EXISTS suppliers_shop_id_idx ON suppliers (shop_id);
       ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
@@ -354,6 +358,83 @@ export const initDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_credit_notes_customer_status ON credit_notes(customer_id, status);
       CREATE INDEX IF NOT EXISTS idx_sales_returns_sale ON sales_returns(sale_id);
       CREATE INDEX IF NOT EXISTS idx_redemptions_sale ON credit_note_redemptions(sale_id);
+
+      -- Ensure customer_id on shops and branch_shop_id on customers exist
+      ALTER TABLE shops ADD COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_shop_id INTEGER REFERENCES shops(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_shops_customer_id ON shops(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_customers_branch_shop_id ON customers(branch_shop_id);
+
+      -- 1. Explicitly link known branch shops (AS, PS2, PS1) to their true customer accounts
+      UPDATE shops sh
+      SET customer_id = c.id
+      FROM customers c
+      WHERE REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') IN ('as', 'asstore')
+        AND sh.location_type != 'warehouse'
+        AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') IN ('asstore', 'as') OR c.mobile LIKE '%9979769700%');
+
+      UPDATE shops sh
+      SET customer_id = c.id
+      FROM customers c
+      WHERE REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps2'
+        AND sh.location_type != 'warehouse'
+        AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps2' OR c.mobile LIKE '%9904269700%');
+
+      UPDATE shops sh
+      SET customer_id = c.id
+      FROM customers c
+      WHERE REGEXP_REPLACE(LOWER(sh.name), '[^a-z0-9]', '', 'g') = 'ps1'
+        AND sh.location_type != 'warehouse'
+        AND (REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = 'ps1' OR c.mobile LIKE '%9099569700%');
+
+      -- 2. General reconciliation for any other branch shops by score
+      UPDATE shops sh
+      SET customer_id = best_match.customer_id
+      FROM (
+        SELECT DISTINCT ON (sh_sub.id)
+          sh_sub.id AS shop_id,
+          c.id AS customer_id
+        FROM shops sh_sub
+        JOIN customers c ON (
+          (sh_sub.phone IS NOT NULL AND sh_sub.phone != '' AND REPLACE(c.mobile, ' ', '') LIKE '%' || REPLACE(sh_sub.phone, ' ', ''))
+          OR REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = REGEXP_REPLACE(LOWER(sh_sub.name), '[^a-z0-9]', '', 'g')
+          OR (sh_sub.area IS NOT NULL AND sh_sub.area != '' AND LOWER(TRIM(c.address)) = LOWER(TRIM(sh_sub.area)))
+        )
+        WHERE sh_sub.location_type != 'warehouse'
+          AND sh_sub.customer_id IS NULL
+        ORDER BY 
+          sh_sub.id,
+          CASE 
+            WHEN (sh_sub.phone IS NOT NULL AND sh_sub.phone != '' AND REPLACE(c.mobile, ' ', '') LIKE '%' || REPLACE(sh_sub.phone, ' ', '')) THEN 1000
+            WHEN REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]', '', 'g') = REGEXP_REPLACE(LOWER(sh_sub.name), '[^a-z0-9]', '', 'g') THEN 800
+            ELSE 400
+          END DESC,
+          (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')) DESC,
+          c.id ASC
+      ) best_match
+      WHERE sh.id = best_match.shop_id AND sh.customer_id IS NULL;
+
+      -- 3. Clear incorrect branch_shop_id links that do not match the shop's customer_id
+      UPDATE customers c
+      SET branch_shop_id = NULL
+      WHERE branch_shop_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM shops sh WHERE sh.id = c.branch_shop_id AND sh.customer_id = c.id
+        );
+
+      -- 4. Sync correct branch_shop_id for linked customer accounts
+      UPDATE customers c
+      SET branch_shop_id = sh.id
+      FROM shops sh
+      WHERE sh.customer_id = c.id
+        AND sh.location_type != 'warehouse'
+        AND (c.branch_shop_id IS NULL OR c.branch_shop_id != sh.id);
+
+      DELETE FROM customers c
+      WHERE c.notes LIKE '%Automated branch customer account%'
+        AND NOT EXISTS (SELECT 1 FROM sales s WHERE s.customer_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.customer_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM shops sh WHERE sh.customer_id = c.id);
     `);
   } catch (ddlErr) {
     console.warn('[Database] Non-fatal init DDL notice:', ddlErr.message);

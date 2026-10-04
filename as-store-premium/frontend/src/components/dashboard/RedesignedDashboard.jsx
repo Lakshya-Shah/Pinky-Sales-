@@ -7,6 +7,7 @@ import {
   Building2,
   AlertTriangle,
   Store,
+  Truck,
   TrendingUp,
   TrendingDown,
   Bell,
@@ -1036,31 +1037,35 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
             </div>
           </motion.div>
 
-          {/* Card 6: Active Shops */}
+          {/* Card 6: Active Shops (Superadmin) / Warehouse Inward Bills (Shopkeeper) */}
           <motion.div
             variants={{ hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0 } }}
             whileHover={{ y: -4 }}
-            onClick={() => setActivePage('shops')}
+            onClick={() => setActivePage(role === 'shopkeeper' ? 'warehouse-bills' : 'shops')}
             className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-900/5 hover:border-cyan-500/50 transition-all space-y-3 relative overflow-hidden group cursor-pointer"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <span className="p-2.5 rounded-2xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
-                  <Store className="w-5 h-5" />
+                  {role === 'shopkeeper' ? <Truck className="w-5 h-5" /> : <Store className="w-5 h-5" />}
                 </span>
-                <span className="text-xs font-black uppercase tracking-wider text-slate-400">Branches</span>
+                <span className="text-xs font-black uppercase tracking-wider text-slate-400">
+                  {role === 'shopkeeper' ? 'Warehouse Bills' : 'Branches'}
+                </span>
               </div>
               <span className="px-2.5 py-1 rounded-full bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300 text-[11px] font-black">
-                Active Nodes
+                {role === 'shopkeeper' ? 'Inward Dispatches' : 'Active Nodes'}
               </span>
             </div>
 
             <div className="flex items-end justify-between pt-1">
               <div>
                 <strong className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white block">
-                  <AnimatedCounter value={dashboardShopCount} suffix=" branches" />
+                  {role === 'shopkeeper' ? 'Inward Bills' : <AnimatedCounter value={dashboardShopCount} suffix=" branches" />}
                 </strong>
-                <span className="text-[11px] font-bold text-slate-400 block mt-1">Operational</span>
+                <span className="text-[11px] font-bold text-slate-400 block mt-1">
+                  {role === 'shopkeeper' ? 'View dispatches & invoices →' : 'Operational'}
+                </span>
               </div>
               <SparklineChart data={[1, 2, 2, 3, 3, 3, dashboardShopCount || 3]} color="#06b6d4" />
             </div>

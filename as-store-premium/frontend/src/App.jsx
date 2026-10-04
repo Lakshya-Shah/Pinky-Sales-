@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
+  BatteryCharging,
   Boxes,
   Building2,
   ChevronDown,
@@ -81,6 +82,7 @@ const AgingReport = React.lazy(() => import('./components/reports/AgingReport'))
 const SalesProfitLedgerPage = React.lazy(() => import('./components/reports/SalesProfitLedgerPage'));
 const PurchaseBillsPage = React.lazy(() => import('./components/billing/PurchaseBillsPage'));
 const DebitNotesPage = React.lazy(() => import('./components/billing/DebitNotesPage'));
+const WarehouseBillsPage = React.lazy(() => import('./components/billing/WarehouseBillsPage'));
 // Named export wrapper for CategoriesPage
 const CategoriesPage = React.lazy(() => import('./components/other-products/CategoriesPage').then(m => ({ default: m.CategoriesPage })));
 const ShopkeeperLoginsPage = React.lazy(() => import('./components/operations/ShopkeeperLoginsPage'));
@@ -456,6 +458,7 @@ const navByRole = {
     ['payments', 'Pending', CreditCard],
     ['tools', 'Tools', Wrench],
     ['spares', 'Spares', Cpu],
+    ['battery', 'Battery', BatteryCharging],
     ['oca-glass', 'OCA glass', Layers],
     ['other-category', 'Other category', LayoutGrid],
     ['low-stock', 'Low Stock', AlertTriangle],
@@ -465,6 +468,7 @@ const navByRole = {
     ['manufacturing-brands', 'Manufacturing Brands', Tags],
     ['suppliers', 'Suppliers', Users],
     ['categories', 'Product Categories', Store],
+    ['warehouse-bills', 'Warehouse Bills', Truck],
     ['purchase-bills', 'Purchase Bills', ShoppingCart],
     ['debit-notes', 'Debit Notes (Returns)', RotateCcw],
     ['ledger', 'Party Ledger', BookOpen],
@@ -484,8 +488,10 @@ const navByRole = {
     ['payments', 'Pending', CreditCard],
     ['tools', 'Tools', Wrench],
     ['spares', 'Spares', Cpu],
+    ['battery', 'Battery', BatteryCharging],
     ['oca-glass', 'OCA glass', Layers],
     ['other-category', 'Other category', LayoutGrid],
+    ['warehouse-bills', 'Warehouse Inward Bills', Truck],
     ['low-stock', 'Low Stock', AlertTriangle],
     ['order-stock', 'Order Stock', ShoppingCart],
     ['requests', 'My Requisitions', History],
@@ -506,6 +512,7 @@ const navByRole = {
     ['prices', 'Prices', IndianRupee],
     ['tools', 'Tools', Wrench],
     ['spares', 'Spares', Cpu],
+    ['battery', 'Battery', BatteryCharging],
     ['oca-glass', 'OCA glass', Layers],
     ['other-category', 'Other category', LayoutGrid],
     ['models', 'Models', Smartphone],
@@ -514,6 +521,7 @@ const navByRole = {
     ['catalog', 'Catalog', ShoppingBag],
     ['tools', 'Tools', Wrench],
     ['spares', 'Spares', Cpu],
+    ['battery', 'Battery', BatteryCharging],
     ['oca-glass', 'OCA glass', Layers],
     ['other-category', 'Other category', LayoutGrid],
     ['models', 'Models', Smartphone],
@@ -525,17 +533,17 @@ navByRole.user = navByRole.customer;
 const sidebarSectionsByRole = {
   superadmin: [
     { title: 'Overview', ids: ['dashboard'] },
-    { title: 'Operations', ids: ['prices', 'stock', 'customers', 'sales', 'payments', 'tools', 'spares', 'oca-glass', 'other-category'] },
+    { title: 'Operations', ids: ['prices', 'stock', 'customers', 'sales', 'payments', 'tools', 'spares', 'battery', 'oca-glass', 'other-category'] },
     { title: 'Inventory & Catalog', ids: ['low-stock', 'requests', 'models', 'brands', 'manufacturing-brands', 'suppliers', 'categories'] },
-    { title: 'Accounts Payable', ids: ['purchase-bills', 'debit-notes'] },
+    { title: 'Accounts Payable', ids: ['warehouse-bills', 'purchase-bills', 'debit-notes'] },
     { title: 'Ledger & Reports', ids: ['ledger', 'sales-profit-ledger', 'aging'] },
     { title: 'Management', ids: ['shops', 'shopkeepers', 'import'] },
     { title: 'Reports', ids: ['reports'] },
   ],
   shopkeeper: [
     { title: 'Overview', ids: ['dashboard'] },
-    { title: 'Operations', ids: ['prices', 'stock', 'customers', 'sales', 'payments', 'tools', 'spares', 'oca-glass', 'other-category'] },
-    { title: 'Stock Replenishment', ids: ['low-stock', 'order-stock', 'requests'] },
+    { title: 'Operations', ids: ['prices', 'stock', 'customers', 'sales', 'payments', 'tools', 'spares', 'battery', 'oca-glass', 'other-category'] },
+    { title: 'Stock Replenishment', ids: ['warehouse-bills', 'low-stock', 'order-stock', 'requests'] },
     { title: 'Catalog & Brands', ids: ['models', 'brands', 'manufacturing-brands', 'suppliers', 'categories'] },
     { title: 'Accounts Payable', ids: ['purchase-bills', 'debit-notes'] },
     { title: 'Ledger & Reports', ids: ['ledger', 'sales-profit-ledger', 'aging'] },
@@ -543,10 +551,10 @@ const sidebarSectionsByRole = {
   ],
   supplier: [
     { title: 'Overview', ids: ['dashboard'] },
-    { title: 'Catalog & Prices', ids: ['prices', 'tools', 'spares', 'oca-glass', 'other-category', 'models'] },
+    { title: 'Catalog & Prices', ids: ['prices', 'tools', 'spares', 'battery', 'oca-glass', 'other-category', 'models'] },
   ],
   customer: [
-    { title: 'Catalog', ids: ['catalog', 'tools', 'spares', 'oca-glass', 'other-category', 'models'] },
+    { title: 'Catalog', ids: ['catalog', 'tools', 'spares', 'battery', 'oca-glass', 'other-category', 'models'] },
   ],
 };
 sidebarSectionsByRole.admin = sidebarSectionsByRole.shopkeeper;
@@ -570,14 +578,26 @@ const isToolsCategory = (p) => {
          name.includes('opener');
 };
 
+const isBatteryCategory = (p) => {
+  if (isToolsCategory(p)) return false;
+  const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
+  const name = String(p?.short_name || p?.name || '').toLowerCase();
+  return cat.includes('battery') || 
+         cat.includes('batt') || 
+         name.includes('battery') || 
+         name.includes('batt.') || 
+         name.includes('batt ') || 
+         name.endsWith('batt');
+};
+
 const isSparesCategory = (p) => {
+  if (isBatteryCategory(p)) return false;
   const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
   const name = String(p?.short_name || p?.name || '').toLowerCase();
   return cat.includes('spare') || 
          cat.includes('flex') || 
          cat.includes('ic') || 
          cat.includes('camera') || 
-         cat.includes('battery') || 
          cat.includes('charging') || 
          cat.includes('speaker') || 
          cat.includes('sim') || 
@@ -606,7 +626,7 @@ const isDisplayCategory = (p) => {
 };
 
 const isOtherCategory = (p) => {
-  return !isToolsCategory(p) && !isSparesCategory(p) && !isOcaGlassCategory(p) && !isDisplayCategory(p);
+  return !isToolsCategory(p) && !isBatteryCategory(p) && !isSparesCategory(p) && !isOcaGlassCategory(p) && !isDisplayCategory(p);
 };
 
 const pageMetaById = {
@@ -619,6 +639,11 @@ const pageMetaById = {
     group: 'Stock Replenishment',
     title: 'Order Stock from Warehouse',
     description: 'Browse Central Warehouse live stock, choose color variants, and submit replenishment orders.',
+  },
+  'warehouse-bills': {
+    group: 'Stock Replenishment',
+    title: 'Warehouse Inward Bills',
+    description: 'Invoices, goods received, and dispatched items billed to this branch from Central Warehouse.',
   },
   shops: {
     group: 'Operations',
@@ -673,7 +698,12 @@ const pageMetaById = {
   spares: {
     group: 'Operations',
     title: 'Spares',
-    description: 'Browse replacement flex cables, ICs, charging ports, cameras, batteries, and hardware spare parts.',
+    description: 'Browse replacement flex cables, ICs, charging ports, cameras, and hardware spare parts.',
+  },
+  battery: {
+    group: 'Operations',
+    title: 'Battery',
+    description: 'Browse mobile phone batteries, high capacity cells, replacement batteries, and battery accessories.',
   },
   'oca-glass': {
     group: 'Operations',
@@ -732,7 +762,7 @@ const pageMetaById = {
   },
 };
 
-const validPageIds = new Set([...Object.values(navByRole).flatMap((items) => items.map(([id]) => id)), 'low-stock', 'order-stock', 'stock-requests', 'tools', 'spares', 'oca-glass', 'other-category']);
+const validPageIds = new Set([...Object.values(navByRole).flatMap((items) => items.map(([id]) => id)), 'low-stock', 'order-stock', 'stock-requests', 'tools', 'spares', 'battery', 'oca-glass', 'other-category']);
 const defaultPageForRole = (role) => (role === 'customer' || role === 'user' ? 'catalog' : 'dashboard');
 const pageFromPath = () => {
   if (typeof window === 'undefined') return '';
@@ -802,6 +832,97 @@ const calculateDueDate = (invoiceDateStr, termsDays) => {
     return `${y}-${m}-${dt}`;
   }
   return invoiceDateStr;
+};
+
+const findBestMatchingBranchCustomer = (shop, customers = []) => {
+  if (!shop || shop.location_type === 'warehouse' || !Array.isArray(customers) || customers.length === 0) return null;
+  const normS = String(shop.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normArea = String(shop.area || '').toLowerCase().trim();
+  const phone = String(shop.phone || '').trim();
+  const sMobile = phone.replace(/[^0-9]/g, '');
+
+  // 1. Conclusive resolution for known core branches
+  if (normS === 'as' || normS === 'asstore') {
+    const asCust = customers.find((c) => {
+      const normC = String(c.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cMobile = String(c.mobile || '').replace(/[^0-9]/g, '');
+      return normC === 'asstore' || normC === 'as' || cMobile.includes('9979769700');
+    });
+    if (asCust) return asCust;
+  }
+
+  if (normS === 'ps2') {
+    const ps2Cust = customers.find((c) => {
+      const normC = String(c.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cMobile = String(c.mobile || '').replace(/[^0-9]/g, '');
+      return normC === 'ps2' || cMobile.includes('9904269700');
+    });
+    if (ps2Cust) return ps2Cust;
+  }
+
+  if (normS === 'ps1') {
+    const ps1Cust = customers.find((c) => {
+      const normC = String(c.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cMobile = String(c.mobile || '').replace(/[^0-9]/g, '');
+      return normC === 'ps1' || cMobile.includes('9099569700');
+    });
+    if (ps1Cust) return ps1Cust;
+  }
+
+  // 2. Direct shop.customer_id match if customer exists in the list
+  if (shop.customer_id) {
+    const directCust = customers.find((c) => String(c.id) === String(shop.customer_id));
+    if (directCust) return directCust;
+  }
+
+  const getMatchScore = (c) => {
+    if (!c) return -1;
+    const normC = String(c.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cArea = String(c.address || '').toLowerCase().trim();
+    const cMobile = String(c.mobile || '').replace(/[^0-9]/g, '');
+    let score = 0;
+
+    // 1. Conclusive Phone match (+1000)
+    if (sMobile && cMobile && (sMobile === cMobile || (sMobile.length >= 10 && cMobile.endsWith(sMobile)) || (cMobile.length >= 10 && sMobile.endsWith(cMobile)))) {
+      score += 1000;
+    }
+
+    // 2. Direct branch_shop_id link (+800)
+    if (c.branch_shop_id && String(c.branch_shop_id) === String(shop.id)) {
+      score += 800;
+    }
+
+    // 3. Strict Name match (+600)
+    if (normC === normS) {
+      score += 600;
+    }
+
+    // 4. Area / Address match (+200)
+    if (normArea && cArea) {
+      if (normArea === cArea) score += 200;
+      else if ((normArea.includes('podar') || normArea.includes('poddar')) && (cArea.includes('podar') || cArea.includes('poddar'))) score += 180;
+      else if (normArea.includes('pandesara') && cArea.includes('pandesara')) score += 180;
+      else if (normArea.includes('pratik') && cArea.includes('pratik')) score += 180;
+    }
+
+    // 5. Explicit ID link (+100)
+    if (shop.customer_id && String(c.id) === String(shop.customer_id)) {
+      score += 100;
+    }
+
+    // 6. Purchases tie-breaker (max 50 points)
+    const purchases = Number(c.purchases_count ?? c.purchases ?? (c.sales?.length || 0));
+    score += Math.min(purchases, 50);
+
+    return score;
+  };
+
+  const scoredMatches = customers
+    .map((c) => ({ customer: c, score: getMatchScore(c) }))
+    .filter((m) => m.score >= 500)
+    .sort((a, b) => b.score - a.score);
+
+  return scoredMatches[0]?.customer || null;
 };
 
 const initialForms = {
@@ -1910,7 +2031,11 @@ function SalesCreationWorkspace({
                   }
                 }));
               }}
-              options={(data.customers || []).map((c) => [c.id, `${c.name}${c.mobile ? ` (${c.mobile})` : ''}${c.address ? ` - ${c.address}` : ''}`])}
+              options={(data.customers || []).map((c) => {
+                const linkedShop = (data.shops || []).find(s => s.location_type !== 'warehouse' && (String(s.customer_id) === String(c.id) || String(s.effective_customer_id) === String(c.id) || String(c.branch_shop_id) === String(s.id) || (s.name && c.name && s.name.toLowerCase().replace(/\s+/g, '') === c.name.toLowerCase().replace(/\s+/g, ''))));
+                const branchTag = linkedShop ? ` [🏢 BRANCH: ${linkedShop.name}]` : '';
+                return [c.id, `${c.name}${branchTag}${c.mobile ? ` (${c.mobile})` : ''}${c.address ? ` - ${c.address}` : ''}`];
+              })}
               placeholder="Search or select customer..."
               searchPlaceholder="Search by name, phone, or address..."
               className="w-full"
@@ -2884,6 +3009,7 @@ function App() {
   const [priceSearch, setPriceSearch] = useState('');
   const [toolsSearch, setToolsSearch] = useState('');
   const [sparesSearch, setSparesSearch] = useState('');
+  const [batterySearch, setBatterySearch] = useState('');
   const [ocaSearch, setOcaSearch] = useState('');
   const [otherCategorySearch, setOtherCategorySearch] = useState('');
   const [customerFilters, setCustomerFilters] = useState({ search: '', status: '' });
@@ -3004,7 +3130,7 @@ function App() {
   const [addToolSpareCategory, setAddToolSpareCategory] = useState('tools');
 
   const openAddToolSpareModal = (cat = 'tools') => {
-    setAddToolSpareCategory(cat === 'spares' ? 'spares' : 'tools');
+    setAddToolSpareCategory(cat === 'battery' ? 'battery' : cat === 'spares' ? 'spares' : 'tools');
     setAddToolSpareModalOpen(true);
   };
 
@@ -3051,7 +3177,7 @@ function App() {
     try {
       await Promise.all([
         loadCore(),
-        loadProductPage({ tab: active === 'tools' || active === 'spares' ? active : 'prices', page: 1 }),
+        loadProductPage({ tab: active === 'tools' || active === 'spares' || active === 'battery' ? active : 'prices', page: 1 }),
         active === 'stock' ? loadTab('stock', shopId) : Promise.resolve(),
       ]);
     } catch (err) {
@@ -3277,7 +3403,58 @@ function App() {
     reports: null,
   });
   const [isEditingShop, setIsEditingShop] = useState(false);
-  const [editShopForm, setEditShopForm] = useState({ name: '', area: '', address: '', phone: '' });
+  const [editShopForm, setEditShopForm] = useState({ name: '', area: '', address: '', phone: '', customer_id: '' });
+  const [warehouseCustomerOptions, setWarehouseCustomerOptions] = useState([]);
+  const [branchBillsData, setBranchBillsData] = useState({ bills: [], shops: [], summary: {} });
+  const [branchBillsFilterShop, setBranchBillsFilterShop] = useState('all');
+  const [branchBillsSearch, setBranchBillsSearch] = useState('');
+
+  const filteredBranchBills = useMemo(() => {
+    let list = branchBillsData.bills || [];
+    if (branchBillsFilterShop !== 'all') {
+      const targetShop = (data.shops || []).find(s => String(s.id) === String(branchBillsFilterShop));
+      const resolvedCust = findBestMatchingBranchCustomer(targetShop, (data.customers || []).concat(warehouseCustomerOptions));
+      const targetCid = resolvedCust?.id || targetShop?.customer_id || targetShop?.effective_customer_id;
+      list = list.filter(b => 
+        String(b.branch_shop_id) === String(branchBillsFilterShop) ||
+        (targetCid && String(b.customer_id) === String(targetCid)) ||
+        (targetShop?.customer_id && String(b.customer_id) === String(targetShop.customer_id)) ||
+        (targetShop?.effective_customer_id && String(b.customer_id) === String(targetShop.effective_customer_id))
+      );
+    }
+    if (branchBillsSearch.trim()) {
+      const q = branchBillsSearch.trim().toLowerCase();
+      list = list.filter(b => 
+        String(b.invoice_number || '').toLowerCase().includes(q) ||
+        String(b.branch_name || '').toLowerCase().includes(q) ||
+        String(b.customer_name || '').toLowerCase().includes(q) ||
+        (b.items || []).some(it => String(it.name || it.product_name || '').toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [branchBillsData.bills, branchBillsFilterShop, branchBillsSearch, data.shops, data.customers, warehouseCustomerOptions]);
+
+  const startWarehouseBillForBranch = (targetShop, customerId = null) => {
+    const warehouse = (data.shops || []).find(s => s.location_type === 'warehouse');
+    if (warehouse) {
+      setSelectedShop(String(warehouse.id));
+      setShopId(Number(warehouse.id));
+    }
+    const resolvedCust = findBestMatchingBranchCustomer(targetShop, (data.customers || []).concat(warehouseCustomerOptions));
+    const resolvedCustomerId = customerId || resolvedCust?.id || targetShop?.customer_id || targetShop?.effective_customer_id;
+    if (resolvedCustomerId) {
+      setForms(prev => ({
+        ...prev,
+        sale: {
+          ...(prev.sale || {}),
+          customer_id: resolvedCustomerId,
+        }
+      }));
+    }
+    setDetailedShopId(null);
+    setActive('sales');
+    showToast(`Creating Warehouse bill for ${targetShop?.name || 'Branch'}`);
+  };
   const [expandedSaleId, setExpandedSaleId] = useState(null);
   const [selectedPaymentCustomer, setSelectedPaymentCustomer] = useState(null);
   const [paymentModalTarget, setPaymentModalTarget] = useState(null);
@@ -4042,8 +4219,73 @@ function App() {
       const set = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
       if (tab === 'dashboard') set('dashboard', await authedFetch(`/dashboard${dashboardScoped}`));
       if (tab === 'shops') {
-        const shopsRes = await authedFetch('/shops');
-        set('shops', Array.isArray(shopsRes) ? shopsRes : (shopsRes?.data || []));
+        const [shopsRes, branchBillsRes, custRes] = await Promise.all([
+          authedFetch('/shops'),
+          authedFetch('/shops/all-branch-bills').catch(() => ({ bills: [], summary: {} })),
+          data.customers?.length ? Promise.resolve(data.customers) : authedFetch('/customers').catch(() => []),
+        ]);
+        let rawShops = Array.isArray(shopsRes) ? shopsRes : (shopsRes?.data || []);
+        let allCustomers = Array.isArray(custRes) ? custRes : (custRes?.data || custRes?.customers || []);
+        let allBills = branchBillsRes?.bills || [];
+
+        for (const shop of rawShops) {
+          if (shop.location_type === 'warehouse') continue;
+          const bestCust = findBestMatchingBranchCustomer(shop, allCustomers);
+          if (bestCust && (Number(shop.warehouse_bills_count || 0) === 0 || String(shop.customer_id) !== String(bestCust.id))) {
+            const custSalesCount = Number(bestCust.purchases_count || bestCust.purchases || 0);
+            if (custSalesCount > 0) {
+              shop.customer_id = bestCust.id;
+              shop.effective_customer_id = bestCust.id;
+              shop.customer_name = bestCust.name;
+              shop.warehouse_bills_count = custSalesCount;
+              shop.warehouse_bills_pending = Number(bestCust.pending_balance ?? bestCust.pending_due ?? bestCust.pending ?? 0);
+              shop.warehouse_bills_total = Number(bestCust.total_purchases_amount || 0);
+
+              authedFetch(`/shops/${shop.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                  name: shop.name,
+                  area: shop.area,
+                  address: shop.address,
+                  phone: shop.phone,
+                  customer_id: bestCust.id,
+                })
+              }).catch(() => {});
+
+              const hasBills = allBills.some(b => String(b.customer_id) === String(bestCust.id));
+              if (!hasBills) {
+                try {
+                  const salesCustRes = await authedFetch(`/sales?customerId=${bestCust.id}&limit=500`).catch(() => []);
+                  const extraBills = (Array.isArray(salesCustRes) ? salesCustRes : (salesCustRes?.data || salesCustRes?.sales || [])).map(b => ({
+                    ...b,
+                    branch_shop_id: shop.id,
+                    branch_name: shop.name,
+                    branch_area: shop.area,
+                    customer_name: bestCust.name,
+                    customer_mobile: bestCust.mobile,
+                    customer_address: bestCust.address,
+                  }));
+                  allBills = allBills.concat(extraBills);
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          }
+        }
+
+        set('shops', rawShops);
+        setBranchBillsData({
+          bills: allBills,
+          shops: branchBillsRes?.shops || [],
+          summary: {
+            total_bills: allBills.length,
+            total_amount: allBills.reduce((s, b) => s + Number(b.total_amount || 0), 0),
+            total_paid: allBills.reduce((s, b) => s + Number(b.paid_amount || 0), 0),
+            total_pending: allBills.reduce((s, b) => s + Number(b.pending_amount || 0), 0),
+          }
+        });
+        if (allCustomers.length && !data.customers?.length) set('customers', allCustomers);
       }
       if (tab === 'shopkeepers') {
         const skRes = await authedFetch('/shopkeepers');
@@ -4053,7 +4295,7 @@ function App() {
         if (role === 'customer') set('catalog', await api('/catalog'));
         else await loadProductPage({ tab, page: 1, currentShop });
       }
-      if (tab === 'prices') {
+      if (tab === 'prices' || tab === 'tools' || tab === 'spares' || tab === 'battery' || tab === 'oca-glass' || tab === 'other-category') {
         const stockParams = scopedParams(currentShop);
         stockParams.set('page', '1');
         stockParams.set('limit', '5000');
@@ -4145,34 +4387,101 @@ function App() {
   };
 
   // Click handler to open detailed shop view (Super Admin only)
-  const viewShopDetails = async (shop) => {
+  const viewShopDetails = async (shop, initialTab = 'stock') => {
     if (role !== 'superadmin') return;
     setDetailedShopId(shop.id);
-    setDetailsTab('stock');
+    setDetailsTab(initialTab);
     setIsEditingShop(false);
-    setEditShopForm({ name: shop.name || '', area: shop.area || '', address: shop.address || '', phone: shop.phone || '' });
-    setDetailedShopData({ loading: true, stock: [], customers: [], sales: [], pending: [], reports: null });
+    setEditShopForm({ 
+      name: shop.name || '', 
+      area: shop.area || '', 
+      address: shop.address || '', 
+      phone: shop.phone || '',
+      customer_id: shop.customer_id || shop.effective_customer_id || '',
+    });
+    setDetailedShopData({ 
+      loading: true, 
+      stock: [], 
+      customers: [], 
+      sales: [], 
+      pending: [], 
+      reports: null,
+      warehouseBills: [],
+      warehouseBillsSummary: null,
+      warehouseCustomer: null,
+    });
     try {
       const stockParams = new URLSearchParams({
         shopId: String(shop.id),
         page: '1',
         limit: '500',
       });
-      const [stock, customers, sales, pending, reports] = await Promise.all([
+      const whShop = (data.shops || []).find(s => s.location_type === 'warehouse');
+      const whCustUrl = whShop ? `/customers?shopId=${whShop.id}` : '/customers';
+      const [stock, customers, sales, pending, reports, warehouseBillsRes, whCusts] = await Promise.all([
         authedFetch(`/stock?${stockParams.toString()}`),
         authedFetch(`/customers?shopId=${shop.id}`),
         authedFetch(`/sales?shopId=${shop.id}`),
         authedFetch(`/pending-payments?shopId=${shop.id}`),
         authedFetch(`/reports?shopId=${shop.id}`),
+        authedFetch(`/shops/${shop.id}/warehouse-bills`).catch(() => ({ bills: [], summary: {}, customer: null })),
+        authedFetch(whCustUrl).catch(() => []),
       ]);
+      const resolvedCustList = Array.isArray(whCusts) ? whCusts : (whCusts?.data || whCusts?.customers || []);
+      setWarehouseCustomerOptions(resolvedCustList);
+
+      const allCustsForMatch = (data.customers || []).concat(resolvedCustList);
+      const matchedCust = findBestMatchingBranchCustomer(shop, allCustsForMatch);
+      const targetCid = matchedCust?.id || warehouseBillsRes?.customer?.id || shop.customer_id;
+
+      let bills = warehouseBillsRes?.bills || [];
+      let summary = warehouseBillsRes?.summary || null;
+      let warehouseCustomer = warehouseBillsRes?.customer || matchedCust || null;
+
+      if ((!bills.length || bills.length === 0) && targetCid) {
+        try {
+          const salesCustRes = await authedFetch(`/sales?customerId=${targetCid}&limit=500`).catch(() => []);
+          const custBills = Array.isArray(salesCustRes) ? salesCustRes : (salesCustRes?.data || salesCustRes?.sales || []);
+          if (custBills.length) {
+            bills = custBills;
+            warehouseCustomer = matchedCust || { id: targetCid, name: matchedCust?.name || shop.name };
+            summary = {
+              total_invoices: bills.length,
+              total_amount: bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+              total_paid: bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0),
+              pending_due: Number(matchedCust?.pending_balance ?? matchedCust?.pending_due ?? matchedCust?.pending ?? bills.reduce((sum, b) => sum + Number(b.pending_amount || 0), 0)),
+              opening_balance: Number(matchedCust?.opening_balance || 0),
+            };
+            authedFetch(`/shops/${shop.id}`, {
+              method: 'PUT',
+              body: JSON.stringify({
+                name: shop.name,
+                area: shop.area,
+                address: shop.address,
+                phone: shop.phone,
+                customer_id: targetCid,
+              })
+            }).catch(() => {});
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       setDetailedShopData({
         loading: false,
         stock: getPaginatedRows(stock),
         customers,
         sales,
         pending: groupPendingPayments(pending),
-        reports
+        reports,
+        warehouseBills: bills,
+        warehouseBillsSummary: summary,
+        warehouseCustomer,
       });
+      if (targetCid) {
+        setEditShopForm(prev => ({ ...prev, customer_id: String(targetCid) }));
+      }
     } catch (err) {
       showToast(err.message || 'Failed to load shop details.');
       setDetailedShopData((prev) => ({ ...prev, loading: false }));
@@ -4194,6 +4503,21 @@ function App() {
       showToast('Shop details updated');
       setIsEditingShop(false);
       await loadCore();
+      const [updatedBillsRes, updatedAllBranchBills] = await Promise.all([
+        authedFetch(`/shops/${detailedShopId}/warehouse-bills`).catch(() => null),
+        authedFetch('/shops/all-branch-bills').catch(() => null),
+      ]);
+      if (updatedBillsRes) {
+        setDetailedShopData(prev => ({
+          ...prev,
+          warehouseBills: updatedBillsRes.bills || [],
+          warehouseBillsSummary: updatedBillsRes.summary || null,
+          warehouseCustomer: updatedBillsRes.customer || null,
+        }));
+      }
+      if (updatedAllBranchBills) {
+        setBranchBillsData(updatedAllBranchBills);
+      }
     } catch (err) {
       showToast(err.message || 'Failed to update shop details');
     } finally {
@@ -4807,7 +5131,7 @@ function App() {
       const dateStr = getExportDateStr();
 
       // Case 1: Stock Prices / Category Export
-      if (type === 'prices' || type === 'tools' || type === 'spares' || type === 'oca-glass' || type === 'other-category') {
+      if (type === 'prices' || type === 'tools' || type === 'spares' || type === 'battery' || type === 'oca-glass' || type === 'other-category') {
         let items = preloadedItems;
         if (!items || !items.length) {
           if (data.products && data.products.length) {
@@ -4823,7 +5147,7 @@ function App() {
           }
         }
         if (!items || !items.length) return showToast('No items found to export');
-        const prefix = type === 'tools' ? 'Tools' : type === 'spares' ? 'Spares' : type === 'oca-glass' ? 'OCA_Glass' : type === 'other-category' ? 'Other_Category' : 'Stock_Prices';
+        const prefix = type === 'tools' ? 'Tools' : type === 'spares' ? 'Spares' : type === 'battery' ? 'Battery' : type === 'oca-glass' ? 'OCA_Glass' : type === 'other-category' ? 'Other_Category' : 'Stock_Prices';
         exportStockPricesExcel(items, `${prefix}_${dateStr}.xlsx`);
         showToast(`${prefix.replace('_', ' ')} Excel (.xlsx) downloaded`);
         return;
@@ -7423,6 +7747,13 @@ function App() {
     });
   }, [allCategoryPool, sparesSearch]);
 
+  const batteryItems = useMemo(() => {
+    return allCategoryPool.filter((item) => {
+      if (!isBatteryCategory(item)) return false;
+      return matchesProductSearch(item, batterySearch);
+    });
+  }, [allCategoryPool, batterySearch]);
+
   const ocaGlassItems = useMemo(() => {
     return allCategoryPool.filter((item) => {
       if (!isOcaGlassCategory(item)) return false;
@@ -8071,36 +8402,294 @@ function App() {
                   <Input label="Area" className="md:col-span-2" value={forms?.shop?.area || ''} onChange={(v) => setForms({ ...forms, shop: { ...(forms?.shop || {}), area: v } })} />
                   <Input label="Address" className="md:col-span-2" value={forms?.shop?.address || ''} onChange={(v) => setForms({ ...forms, shop: { ...(forms?.shop || {}), address: v } })} />
                   <Input label="Phone" className="md:col-span-2" value={forms?.shop?.phone || ''} onChange={(v) => setForms({ ...forms, shop: { ...(forms?.shop || {}), phone: v } })} />
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-bold text-slate-500 block mb-1">
+                      Link Warehouse Customer (Optional)
+                    </label>
+                    <select
+                      className="input w-full text-xs bg-white"
+                      value={forms?.shop?.customer_id || ''}
+                      onChange={(e) => setForms({ ...forms, shop: { ...(forms?.shop || {}), customer_id: e.target.value } })}
+                    >
+                      <option value="">-- Auto-create or Select Warehouse Customer --</option>
+                      {(data.customers || []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} {c.mobile ? `(${c.mobile})` : ''} {c.address ? `- ${c.address}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </FormPanel>
                 <CardGrid 
                   items={data?.shops || []} 
                   onItemClick={role === 'superadmin' ? viewShopDetails : null}
-                  render={(shop) => (
-                    <>
-                      <div className="flex items-start justify-between w-full mb-3">
-                        <div className="card-icon-wrapper !mb-0">
-                          <Store size={18} />
+                  render={(shop) => {
+                    const resolvedBranchCust = findBestMatchingBranchCustomer(shop, (data.customers || []).concat(warehouseCustomerOptions));
+                    const billsCount = Number(shop.warehouse_bills_count || 0) > 0 
+                      ? Number(shop.warehouse_bills_count) 
+                      : Number(resolvedBranchCust?.purchases_count ?? resolvedBranchCust?.purchases ?? 0);
+                    const billsPending = Number(shop.warehouse_bills_pending ?? shop.pending ?? 0) > 0
+                      ? (shop.warehouse_bills_pending ?? shop.pending)
+                      : (resolvedBranchCust?.pending_balance ?? resolvedBranchCust?.pending_due ?? resolvedBranchCust?.pending ?? 0);
+                    const custBadgeName = resolvedBranchCust?.name || (shop.customer_name && shop.customer_name !== shop.name ? shop.customer_name : null);
+                    return (
+                      <>
+                        <div className="flex items-start justify-between w-full mb-3">
+                          <div className="card-icon-wrapper !mb-0">
+                            <Store size={18} />
+                          </div>
+                          <span className={`status-badge ${shop.location_type === 'warehouse' ? 'warehouse' : 'stock-ok'}`}>
+                            {shop.location_type === 'warehouse' ? 'Central Warehouse' : 'Active Branch'}
+                          </span>
                         </div>
-                        <span className="status-badge stock-ok">Active Branch</span>
-                      </div>
-                      <h3 className="text-lg font-bold text-slate-800 mb-1">{shop.name}</h3>
-                      <p className="text-xs text-slate-500 flex items-center gap-1 mb-4">📍 {shop.area}</p>
-                      <div className="metrics w-full pt-3 border-t border-slate-100 flex justify-between text-xs font-semibold">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] text-slate-400 uppercase font-black">Stock Qty</span>
-                          <span className="text-slate-700 font-bold mt-0.5">{shop.stock} pcs</span>
+                        <h3 className="text-lg font-bold text-slate-800 mb-1">{shop.name}</h3>
+                        <div className="flex items-center justify-between text-xs text-slate-500 mb-3 flex-wrap gap-1">
+                          <span className="flex items-center gap-1">📍 {shop.area}</span>
+                          {shop.location_type !== 'warehouse' && custBadgeName && (
+                            <span className="text-[10px] text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md font-semibold border border-teal-200">
+                              🏢 {custBadgeName}
+                            </span>
+                          )}
                         </div>
-                        {/* Only Super Admin can see pending across all shops; shopkeepers only see their own shop's pending, never warehouse */}
-                        {(role === 'superadmin' || (String(shop.id) === String(shopId) && shop.location_type !== 'warehouse')) && (
-                          <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-slate-400 uppercase font-black">Pending Payments</span>
-                            <span className={`font-bold mt-0.5 ${Number(shop.pending) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>{currency(shop.pending)}</span>
+                        <div className="metrics w-full pt-3 border-t border-slate-100 flex justify-between text-xs font-semibold">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] text-slate-400 uppercase font-black">Stock Qty</span>
+                            <span className="text-slate-700 font-bold mt-0.5">{shop.stock} pcs</span>
+                          </div>
+                          {shop.location_type !== 'warehouse' ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-[10px] text-slate-400 uppercase font-black flex items-center gap-1">
+                                Warehouse Bills
+                                {billsCount > 0 && (
+                                  <span className="bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.2 rounded-full text-[9px] font-bold">
+                                    {billsCount} bills
+                                  </span>
+                                )}
+                              </span>
+                              <span className={`font-bold mt-0.5 ${Number(billsPending) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+                                {currency(billsPending)}
+                              </span>
+                            </div>
+                          ) : (
+                            (role === 'superadmin' || (String(shop.id) === String(shopId) && shop.location_type !== 'warehouse')) && (
+                              <div className="flex flex-col items-end">
+                                <span className="text-[10px] text-slate-400 uppercase font-black">Pending Receivables</span>
+                                <span className={`font-bold mt-0.5 ${Number(shop.pending) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>{currency(shop.pending)}</span>
+                              </div>
+                            )
+                          )}
+                        </div>
+
+                        {role === 'superadmin' && shop.location_type !== 'warehouse' && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              className="text-[11px] font-bold text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                              onClick={() => viewShopDetails(shop, 'warehouse_bills')}
+                            >
+                              <ReceiptText size={12} /> View Bills ({billsCount || 0})
+                            </button>
+                            <button
+                              type="button"
+                              className="text-[11px] font-bold text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                              onClick={() => startWarehouseBillForBranch(shop, resolvedBranchCust?.id)}
+                            >
+                              <Plus size={12} /> New Bill
+                            </button>
                           </div>
                         )}
-                      </div>
-                    </>
-                  )} 
+                      </>
+                    );
+                  }} 
                 />
+
+                {/* Branch Warehouse Bills & Dispatches Section */}
+                <div className="mt-8 bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/40">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="card-icon-wrapper !w-7 !h-7 !mb-0 !rounded-lg bg-teal-500/10 text-teal-700">
+                          <ReceiptText size={16} />
+                        </span>
+                        <h3 className="text-base font-black text-slate-800">Branch Warehouse Bills &amp; Dispatches</h3>
+                        <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
+                          {branchBillsData.bills?.length || 0} Invoices
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Track bills made when branches take stock and goods from the central warehouse
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="searchbox !min-w-[220px]">
+                        <Search size={16} />
+                        <input
+                          placeholder="Search branch bill, items..."
+                          value={branchBillsSearch}
+                          onChange={(e) => setBranchBillsSearch(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="primary !px-3.5 !py-1.5 !min-h-[32px] text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                        onClick={() => startWarehouseBillForBranch(null)}
+                      >
+                        <Plus size={14} /> Create Branch Bill
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Branch filter pills */}
+                  <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 overflow-x-auto bg-white text-xs">
+                    <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider shrink-0 mr-1">Filter Branch:</span>
+                    <button
+                      type="button"
+                      className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        branchBillsFilterShop === 'all'
+                          ? 'bg-slate-900 text-white shadow-2xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                      onClick={() => setBranchBillsFilterShop('all')}
+                    >
+                      All Branches ({branchBillsData.bills?.length || 0})
+                    </button>
+                    {(data.shops || []).filter(s => s.location_type !== 'warehouse').map(shop => {
+                      const resolvedCust = findBestMatchingBranchCustomer(shop, (data.customers || []).concat(warehouseCustomerOptions));
+                      const targetCid = resolvedCust?.id || shop.customer_id || shop.effective_customer_id;
+                      const count = (branchBillsData.bills || []).filter(b => 
+                        String(b.branch_shop_id) === String(shop.id) || 
+                        (targetCid && String(b.customer_id) === String(targetCid)) ||
+                        (shop.customer_id && String(b.customer_id) === String(shop.customer_id)) || 
+                        (shop.effective_customer_id && String(b.customer_id) === String(shop.effective_customer_id))
+                      ).length;
+                      const isActive = String(branchBillsFilterShop) === String(shop.id);
+                      return (
+                        <button
+                          key={shop.id}
+                          type="button"
+                          className={`px-3 py-1 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isActive
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                          onClick={() => setBranchBillsFilterShop(shop.id)}
+                        >
+                          <span>{shop.name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Summary Metric Ribbon */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 border-b border-slate-100 bg-slate-50/20 text-xs font-semibold">
+                    <div className="p-3 sm:px-5 sm:py-3.5 border-r border-slate-100">
+                      <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Total Dispatched</span>
+                      <strong className="text-base font-black text-slate-800 mt-0.5 block truncate">
+                        {currency((branchBillsData.bills || []).reduce((s, b) => s + Number(b.total_amount || 0), 0))}
+                      </strong>
+                    </div>
+                    <div className="p-3 sm:px-5 sm:py-3.5 border-r border-slate-100">
+                      <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Total Paid</span>
+                      <strong className="text-base font-black text-emerald-600 mt-0.5 block truncate">
+                        {currency((branchBillsData.bills || []).reduce((s, b) => s + Number(b.paid_amount || 0), 0))}
+                      </strong>
+                    </div>
+                    <div className="p-3 sm:px-5 sm:py-3.5 border-r border-slate-100">
+                      <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Pending Due to Warehouse</span>
+                      <strong className="text-base font-black text-rose-600 mt-0.5 block truncate">
+                        {currency((branchBillsData.bills || []).reduce((s, b) => s + Number(b.pending_amount || 0), 0))}
+                      </strong>
+                    </div>
+                    <div className="p-3 sm:px-5 sm:py-3.5">
+                      <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Total Invoices</span>
+                      <strong className="text-base font-black text-slate-800 mt-0.5 block truncate">
+                        {branchBillsData.bills?.length || 0} bills
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Invoices Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200/80 bg-slate-50/70 text-slate-500 font-bold text-[11px] uppercase tracking-wider">
+                          <th className="py-3 px-4">Invoice / Date</th>
+                          <th className="py-3 px-4">Branch / Customer</th>
+                          <th className="py-3 px-4">Items Dispatched</th>
+                          <th className="py-3 px-4">Total Amount</th>
+                          <th className="py-3 px-4">Paid / Balance</th>
+                          <th className="py-3 px-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredBranchBills.map((bill) => {
+                          const items = bill.items || [];
+                          const itemsSummary = items.map(it => `${it.product_name || it.name} (${it.quantity})`).join(', ');
+                          return (
+                            <tr className="hover:bg-slate-50/60 transition-colors" key={bill.id}>
+                              <td className="py-3 px-4">
+                                <span className="font-bold text-slate-900 block text-xs tracking-tight">
+                                  {bill.invoice_number || `INV-${String(bill.id).padStart(6, '0')}`}
+                                </span>
+                                <span className="text-[11px] text-slate-400 block mt-0.5">
+                                  {formatDateDMY(bill.invoice_date || bill.sale_date)}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="text-slate-800 font-bold flex items-center gap-1.5">
+                                  <Store size={13} className="text-teal-600 shrink-0" />
+                                  {bill.branch_name || 'Branch'}
+                                </span>
+                                <span className="text-[11px] text-slate-400 block mt-0.5">
+                                  Cust: {bill.customer_name}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 max-w-[280px]">
+                                <span className="font-semibold text-slate-700 block truncate" title={itemsSummary || 'Goods'}>
+                                  {itemsSummary || 'Goods dispatched'}
+                                </span>
+                                <span className="text-[11px] text-slate-400 block mt-0.5">
+                                  {bill.quantity || items.reduce((s, it) => s + (it.quantity || 0), 0)} total pcs
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 font-bold text-slate-800">
+                                {currency(bill.total_amount)}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="text-emerald-700 block text-xs font-semibold">Paid: {currency(bill.paid_amount)}</span>
+                                <span className={`text-xs font-bold block mt-0.5 ${Number(bill.pending_amount) > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                                  Due: {currency(bill.pending_amount)}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <button
+                                  type="button"
+                                  className="soft !px-2.5 !py-1 !min-h-[28px] text-xs font-bold inline-flex items-center gap-1 shadow-2xs"
+                                  onClick={() => printTaxInvoicePDF(bill)}
+                                >
+                                  <ReceiptText size={13} /> Invoice PDF
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    {!filteredBranchBills.length && (
+                      <div className="p-8">
+                        <Empty
+                          title="No branch bills found"
+                          description="Bills created from the Warehouse workspace for branch customers will appear here automatically."
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
               </section>
             </PageWrapper>
           )}
@@ -8201,7 +8790,29 @@ function App() {
                 shopId={shopId || (role === 'shopkeeper' ? session?.shop_id : (selectedShop || data.warehouse?.id || data.shops?.[0]?.id))}
                 shops={data.shops || []}
                 warehouse={data.warehouse}
+                customers={(data.customers || []).concat(warehouseCustomerOptions || [])}
+                findBestMatchingBranchCustomer={findBestMatchingBranchCustomer}
                 role={role}
+                printTaxInvoicePDF={printTaxInvoicePDF}
+                formatDateDMY={formatDateDMY}
+              />
+            </PageWrapper>
+          )}
+
+          {active === 'warehouse-bills' && role !== 'customer' && (
+            <PageWrapper activeKey="warehouse-bills" key="warehouse-bills">
+              <WarehouseBillsPage
+                session={session}
+                role={role}
+                shopId={shopId || (role === 'shopkeeper' ? session?.shop_id : (selectedShop || data.warehouse?.id || data.shops?.[0]?.id))}
+                shops={data.shops || []}
+                warehouse={data.warehouse}
+                customers={(data.customers || []).concat(warehouseCustomerOptions || [])}
+                findBestMatchingBranchCustomer={findBestMatchingBranchCustomer}
+                api={authedFetch}
+                setGlobalToast={showToast}
+                printTaxInvoicePDF={printTaxInvoicePDF}
+                formatDateDMY={formatDateDMY}
               />
             </PageWrapper>
           )}
@@ -8393,6 +9004,36 @@ function App() {
                 fullModelList={fullModelList}
                 priceLabel={priceLabel}
                 categoryType="spares"
+                onOpenAddToolSpare={openAddToolSpareModal}
+              />
+            </PageWrapper>
+          )}
+
+          {active === 'battery' && (
+            <PageWrapper activeKey="battery" key="battery">
+              <PricesPage
+                role={role}
+                shopId={shopId}
+                shops={data.shops || []}
+                suppliers={data.reference?.suppliers || []}
+                stock={data.stock || []}
+                updateStock={updateStock}
+                showToast={showToast}
+                saving={saving}
+                items={batteryItems}
+                search={batterySearch}
+                pager={productPager}
+                loading={productPageLoading}
+                onExportProducts={(exportItems) => exportExcel('battery', {}, exportItems || batteryItems)}
+                onSearchChange={(value) => setBatterySearch(value)}
+                onViewDetails={setSelectedProductDetails}
+                onEditProduct={editProduct}
+                onCloneProduct={cloneProduct}
+                onDeleteProduct={deleteProduct}
+                productName={productName}
+                fullModelList={fullModelList}
+                priceLabel={priceLabel}
+                categoryType="battery"
                 onOpenAddToolSpare={openAddToolSpareModal}
               />
             </PageWrapper>
@@ -9985,6 +10626,23 @@ function App() {
                             />
                           </label>
                         </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-500 block mb-1">
+                            Linked Warehouse Customer (For Branch Bills &amp; Dispatches)
+                            <select
+                              className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                              value={editShopForm.customer_id || ''}
+                              onChange={(e) => setEditShopForm({ ...editShopForm, customer_id: e.target.value })}
+                            >
+                              <option value="">-- Auto-match or Select Customer --</option>
+                              {((warehouseCustomerOptions?.length > 0 ? warehouseCustomerOptions : data.customers) || []).map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name} {c.mobile ? `(${c.mobile})` : ''} {c.address ? `- ${c.address}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
                         <div className="flex gap-2 pt-1">
                           <button type="submit" className="primary !px-4 !py-1.5 !min-h-[32px] text-xs font-bold">Save</button>
                           <button type="button" className="soft !px-4 !py-1.5 !min-h-[32px] text-xs font-bold" onClick={() => setIsEditingShop(false)}>Cancel</button>
@@ -10012,6 +10670,10 @@ function App() {
                 <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-4 mb-6">
                   {[
                     { id: 'stock', label: 'Stock Available', icon: Package },
+                    ...(data.shops.find(s => String(s.id) === String(detailedShopId))?.location_type !== 'warehouse'
+                      ? [{ id: 'warehouse_bills', label: `Warehouse Bills (${detailedShopData.warehouseBills?.length || 0})`, icon: ReceiptText }]
+                      : []
+                    ),
                     { id: 'customers', label: 'Customers List', icon: Users },
                     { id: 'sales', label: 'Sales History', icon: ReceiptText },
                     { id: 'reports', label: 'Audit Logs', icon: FileText }
@@ -10106,6 +10768,127 @@ function App() {
                               </div>
                             ))}
                             {!detailedShopData.stock.length && <Empty title="No stock items found" />}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {detailsTab === 'warehouse_bills' && (
+                      <div className="space-y-6">
+                        {/* Summary Metrics */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="p-3 bg-slate-50 border border-slate-200/50 rounded-2xl">
+                            <span className="text-[9px] uppercase font-black tracking-wider text-slate-400 block">Total Invoiced</span>
+                            <strong className="text-sm sm:text-lg font-black text-slate-800 mt-1 block truncate">
+                              {currency(detailedShopData.warehouseBillsSummary?.total_amount || 0)}
+                            </strong>
+                          </div>
+                          <div className="p-3 bg-slate-50 border border-slate-200/50 rounded-2xl">
+                            <span className="text-[9px] uppercase font-black tracking-wider text-slate-400 block">Total Paid</span>
+                            <strong className="text-sm sm:text-lg font-black text-emerald-600 mt-1 block truncate">
+                              {currency(detailedShopData.warehouseBillsSummary?.total_paid || 0)}
+                            </strong>
+                          </div>
+                          <div className="p-3 bg-slate-50 border border-slate-200/50 rounded-2xl">
+                            <span className="text-[9px] uppercase font-black tracking-wider text-slate-400 block">Outstanding Due</span>
+                            <strong className="text-sm sm:text-lg font-black text-rose-600 mt-1 block truncate">
+                              {currency(detailedShopData.warehouseBillsSummary?.pending_due || 0)}
+                            </strong>
+                          </div>
+                          <div className="p-3 bg-slate-50 border border-slate-200/50 rounded-2xl">
+                            <span className="text-[9px] uppercase font-black tracking-wider text-slate-400 block">Total Bills</span>
+                            <strong className="text-sm sm:text-lg font-black text-slate-800 mt-1 block truncate">
+                              {detailedShopData.warehouseBills?.length || 0} bills
+                            </strong>
+                          </div>
+                        </div>
+
+                        {/* Bills List Card */}
+                        <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/60 shadow-sm">
+                          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/20 dark:bg-slate-950/20">
+                            <div>
+                              <span className="text-xs font-bold text-slate-700 block">Warehouse Bills &amp; Dispatches</span>
+                              <span className="text-[11px] text-slate-400">
+                                Goods taken by {data.shops.find(s => String(s.id) === String(detailedShopId))?.name} from Warehouse
+                                {detailedShopData.warehouseCustomer?.name && ` (Billed to: ${detailedShopData.warehouseCustomer.name})`}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="primary !px-3 !py-1.5 !min-h-[30px] text-xs font-bold flex items-center gap-1.5"
+                              onClick={() => {
+                                const shop = data.shops.find(s => String(s.id) === String(detailedShopId));
+                                startWarehouseBillForBranch(shop, detailedShopData.warehouseCustomer?.id);
+                              }}
+                            >
+                              <Plus size={13} /> Create Warehouse Bill
+                            </button>
+                          </div>
+
+                          <div className="overflow-x-auto border-t border-slate-100">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-200/80 bg-slate-50/70 text-slate-500 font-bold text-[11px] uppercase tracking-wider">
+                                  <th className="py-3 px-4">Invoice / Date</th>
+                                  <th className="py-3 px-4">Items Dispatched</th>
+                                  <th className="py-3 px-4">Total</th>
+                                  <th className="py-3 px-4">Paid / Due</th>
+                                  <th className="py-3 px-4 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {(detailedShopData.warehouseBills || []).map((bill) => {
+                                  const items = bill.items || [];
+                                  const itemsSummary = items.map(it => `${it.product_name || it.name} (${it.quantity})`).join(', ');
+                                  return (
+                                    <tr className="hover:bg-slate-50/60 transition-colors" key={bill.id}>
+                                      <td className="py-3 px-4">
+                                        <span className="font-bold text-slate-900 block text-xs tracking-tight">
+                                          {bill.invoice_number || `INV-${String(bill.id).padStart(6, '0')}`}
+                                        </span>
+                                        <span className="text-[11px] text-slate-400 block mt-0.5">
+                                          {formatDateDMY(bill.invoice_date || bill.sale_date)}
+                                        </span>
+                                      </td>
+                                      <td className="py-3 px-4 max-w-[280px]">
+                                        <span className="font-semibold text-slate-700 block truncate" title={itemsSummary || 'Goods'}>
+                                          {itemsSummary || 'Goods dispatched'}
+                                        </span>
+                                        <span className="text-[11px] text-slate-400 block mt-0.5">
+                                          {bill.quantity || items.reduce((s, it) => s + (it.quantity || 0), 0)} total pcs
+                                        </span>
+                                      </td>
+                                      <td className="py-3 px-4 font-bold text-slate-800">
+                                        {currency(bill.total_amount)}
+                                      </td>
+                                      <td className="py-3 px-4">
+                                        <span className="text-emerald-700 block text-xs font-semibold">Paid: {currency(bill.paid_amount)}</span>
+                                        <span className={`text-xs font-bold block mt-0.5 ${Number(bill.pending_amount) > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                                          Due: {currency(bill.pending_amount)}
+                                        </span>
+                                      </td>
+                                      <td className="py-3 px-4 text-right">
+                                        <button 
+                                          type="button" 
+                                          className="soft !px-2.5 !py-1 !min-h-[28px] text-xs font-bold inline-flex items-center gap-1 shadow-2xs"
+                                          onClick={() => printTaxInvoicePDF(bill)}
+                                        >
+                                          <ReceiptText size={13} /> Invoice
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                            {!detailedShopData.warehouseBills?.length && (
+                              <div className="p-8">
+                                <Empty 
+                                  title="No bills found for this branch" 
+                                  description="Whenever you make a bill in the Warehouse workspace for this branch, it will appear here." 
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
