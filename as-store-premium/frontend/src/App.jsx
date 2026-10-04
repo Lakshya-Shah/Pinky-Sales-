@@ -4280,7 +4280,7 @@ function App() {
           shops: branchBillsRes?.shops || [],
           summary: {
             total_bills: allBills.length,
-            total_amount: allBills.reduce((s, b) => s + Number(b.total_amount || 0), 0),
+            total_amount: allBills.reduce((s, b) => s + Number(b.current_invoice_total || b.total_amount || 0), 0),
             total_paid: allBills.reduce((s, b) => s + Number(b.paid_amount || 0), 0),
             total_pending: allBills.reduce((s, b) => s + Number(b.pending_amount || 0), 0),
           }
@@ -4447,7 +4447,7 @@ function App() {
             warehouseCustomer = matchedCust || { id: targetCid, name: matchedCust?.name || shop.name };
             summary = {
               total_invoices: bills.length,
-              total_amount: bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+              total_amount: bills.reduce((sum, b) => sum + Number(b.current_invoice_total || b.total_amount || 0), 0),
               total_paid: bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0),
               pending_due: Number(matchedCust?.pending_balance ?? matchedCust?.pending_due ?? matchedCust?.pending ?? bills.reduce((sum, b) => sum + Number(b.pending_amount || 0), 0)),
               opening_balance: Number(matchedCust?.opening_balance || 0),
@@ -4564,7 +4564,7 @@ function App() {
 
   const getSalesMetrics = () => {
     const totalOrders = detailedShopData.sales.length;
-    const totalRev = detailedShopData.sales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+    const totalRev = detailedShopData.sales.reduce((sum, s) => sum + Number(s.current_invoice_total || s.total_amount || 0), 0);
     const totalPaid = detailedShopData.sales.reduce((sum, s) => sum + Number(s.paid_amount || 0), 0);
     const totalPending = detailedShopData.sales.reduce((sum, s) => sum + Number(s.pending_amount || 0), 0);
     return { totalOrders, totalRev, totalPaid, totalPending };
@@ -7304,7 +7304,15 @@ function App() {
       0
     );
 
-    const currentInvoiceTotal = Math.max(0, (productsSubtotal + courier) - appliedCredit - Number(sale.advance_applied || 0));
+    const rawDiscount = Number(sale.discount_amount || 0);
+    const impliedDiscount = (!rawDiscount && sale.current_invoice_total && Number(sale.current_invoice_total) > 0 && Number(sale.current_invoice_total) < (productsSubtotal + courier - appliedCredit - Number(sale.advance_applied || 0)))
+      ? Math.max(0, (productsSubtotal + courier - appliedCredit - Number(sale.advance_applied || 0)) - Number(sale.current_invoice_total))
+      : 0;
+    const discountAmount = rawDiscount > 0 ? rawDiscount : impliedDiscount;
+
+    const currentInvoiceTotal = (sale.current_invoice_total !== undefined && sale.current_invoice_total !== null && Number(sale.current_invoice_total) > 0)
+      ? Number(sale.current_invoice_total)
+      : Math.max(0, (productsSubtotal + courier - discountAmount) - appliedCredit - Number(sale.advance_applied || 0));
 
     if (!isConsolidated) {
       if (prevBalance > 0) {
@@ -7442,6 +7450,12 @@ function App() {
                     <span>${formatAmount(courier)}</span>
                   </div>
                 ` : '')}
+                ${discountAmount > 0 ? `
+                  <div class="total-line" style="color: #0f766e; font-weight: 600;">
+                    <span>- DISCOUNT / ROUND OFF</span>
+                    <span>-Rs.${formatAmount(discountAmount)}</span>
+                  </div>
+                ` : ''}
                 ${appliedCredit > 0 ? `
                   <div class="total-line" style="color: #0f766e; font-weight: 600;">
                     <span>- CREDIT NOTE</span>
@@ -7454,7 +7468,7 @@ function App() {
                     <span>-Rs.${formatAmount(sale.advance_applied)}</span>
                   </div>
                 ` : ''}
-                ${prevBalance !== 0 ? `
+                ${(prevBalance !== 0 || discountAmount > 0) ? `
                   <div class="total-line" style="font-weight: 600; border-top: 1px dashed #cbd5e1; margin-top: 2px; padding-top: 2px;">
                     <span>Invoice Total</span>
                     <span>Rs.${formatAmount(currentInvoiceTotal)}</span>
@@ -8513,7 +8527,7 @@ function App() {
                         </span>
                         <h3 className="text-base font-black text-slate-800">Branch Warehouse Bills &amp; Dispatches</h3>
                         <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
-                          {branchBillsData.bills?.length || 0} Invoices
+                          {filteredBranchBills.length} {filteredBranchBills.length !== (branchBillsData.bills?.length || 0) ? `of ${branchBillsData.bills?.length || 0} ` : ''}Invoices
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
@@ -8589,25 +8603,25 @@ function App() {
                     <div className="p-3 sm:px-5 sm:py-3.5 border-r border-slate-100">
                       <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Total Dispatched</span>
                       <strong className="text-base font-black text-slate-800 mt-0.5 block truncate">
-                        {currency((branchBillsData.bills || []).reduce((s, b) => s + Number(b.total_amount || 0), 0))}
+                        {currency((filteredBranchBills || []).reduce((s, b) => s + Number(b.current_invoice_total || b.total_amount || 0), 0))}
                       </strong>
                     </div>
                     <div className="p-3 sm:px-5 sm:py-3.5 border-r border-slate-100">
                       <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Total Paid</span>
                       <strong className="text-base font-black text-emerald-600 mt-0.5 block truncate">
-                        {currency((branchBillsData.bills || []).reduce((s, b) => s + Number(b.paid_amount || 0), 0))}
+                        {currency((filteredBranchBills || []).reduce((s, b) => s + Number(b.paid_amount || 0), 0))}
                       </strong>
                     </div>
                     <div className="p-3 sm:px-5 sm:py-3.5 border-r border-slate-100">
                       <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Pending Due to Warehouse</span>
                       <strong className="text-base font-black text-rose-600 mt-0.5 block truncate">
-                        {currency((branchBillsData.bills || []).reduce((s, b) => s + Number(b.pending_amount || 0), 0))}
+                        {currency((filteredBranchBills || []).reduce((s, b) => s + Number(b.pending_amount || 0), 0))}
                       </strong>
                     </div>
                     <div className="p-3 sm:px-5 sm:py-3.5">
                       <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Total Invoices</span>
                       <strong className="text-base font-black text-slate-800 mt-0.5 block truncate">
-                        {branchBillsData.bills?.length || 0} bills
+                        {filteredBranchBills.length || 0} bills
                       </strong>
                     </div>
                   </div>
@@ -8657,7 +8671,12 @@ function App() {
                                 </span>
                               </td>
                               <td className="py-3 px-4 font-bold text-slate-800">
-                                {currency(bill.total_amount)}
+                                {currency(bill.current_invoice_total || bill.total_amount)}
+                                {Number(bill.discount_amount || 0) > 0 && (
+                                  <span className="text-[10px] text-slate-400 block line-through font-normal">
+                                    {currency(Number(bill.products_total || bill.total_amount || 0))}
+                                  </span>
+                                )}
                               </td>
                               <td className="py-3 px-4">
                                 <span className="text-emerald-700 block text-xs font-semibold">Paid: {currency(bill.paid_amount)}</span>
@@ -9777,7 +9796,7 @@ function App() {
                                         </div>
 
                                         <div className="flex items-center gap-2">
-                                          <strong className="text-xs font-black text-slate-900">{currency(sale.total_amount)}</strong>
+                                          <strong className="text-xs font-black text-slate-900">{currency(sale.current_invoice_total || sale.total_amount)}</strong>
                                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                             Number(sale.pending_amount) > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
                                           }`}>
@@ -10859,7 +10878,7 @@ function App() {
                                         </span>
                                       </td>
                                       <td className="py-3 px-4 font-bold text-slate-800">
-                                        {currency(bill.total_amount)}
+                                        {currency(bill.current_invoice_total || bill.total_amount)}
                                       </td>
                                       <td className="py-3 px-4">
                                         <span className="text-emerald-700 block text-xs font-semibold">Paid: {currency(bill.paid_amount)}</span>
@@ -10974,7 +10993,7 @@ function App() {
                             {detailedShopData.sales.map(s => (
                               <div className="row text-sm hover:bg-slate-50/40" key={s.id} style={{ gridTemplateColumns: '1.5fr 1.2fr 1.2fr' }}>
                                 <span><b>{s.customer_name || 'Walk-in'}</b><small title={s.product_name}>{productName(s)} x {s.quantity}</small></span>
-                                <span>{currency(s.total_amount)} <small>Paid: {currency(s.paid_amount)}</small></span>
+                                <span>{currency(s.current_invoice_total || s.total_amount)} <small>Paid: {currency(s.paid_amount)}</small></span>
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                                   <strong className={`status-badge ${s.pending_amount > 0 ? 'pending' : 'paid'}`}>{currency(s.pending_amount)}</strong>
                                   <button className="soft" onClick={() => printTaxInvoicePDF(s)}><ReceiptText size={16} /> Invoice</button>
@@ -11426,7 +11445,7 @@ function App() {
                                         </>
                                       )}
                                       <span className="text-slate-500 font-medium text-xs ml-2">
-                                        (Total: <strong className="text-slate-800 font-bold">{currency(sale.total_amount)}</strong>)
+                                        (Total: <strong className="text-slate-800 font-bold">{currency(sale.current_invoice_total || sale.total_amount)}</strong>)
                                       </span>
                                     </div>
 

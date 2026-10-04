@@ -254,9 +254,9 @@ export default function WarehouseBillsPage({
 
       const matchesSearch = !search || invNo.includes(search.toLowerCase()) || dateStr.includes(search.toLowerCase()) || itemNames.includes(search.toLowerCase());
 
-      const total = Number(b.total_amount || 0);
+      const total = Number(b.current_invoice_total || b.total_amount || 0);
       const paid = Number(b.paid_amount || 0);
-      const pending = Math.max(0, total - paid);
+      const pending = Number(b.pending_amount !== undefined && b.pending_amount !== null ? b.pending_amount : Math.max(0, total - paid));
 
       let matchesStatus = true;
       if (statusFilter === 'unpaid') {
@@ -270,7 +270,7 @@ export default function WarehouseBillsPage({
   }, [bills, search, statusFilter]);
 
   // Derived metrics
-  const totalBilled = Number(summary?.total_amount || bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0));
+  const totalBilled = Number(summary?.total_amount || bills.reduce((sum, b) => sum + Number(b.current_invoice_total || b.total_amount || 0), 0));
   const totalPaid = Number(summary?.total_paid || bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0));
   const pendingDue = Number(summary?.pending_due ?? Math.max(0, totalBilled - totalPaid));
   const invoiceCount = bills.length;
@@ -492,9 +492,9 @@ export default function WarehouseBillsPage({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
                 {filteredBills.map((bill) => {
-                  const billTotal = Number(bill.total_amount || 0);
+                  const billTotal = Number(bill.current_invoice_total || bill.total_amount || 0);
                   const billPaid = Number(bill.paid_amount || 0);
-                  const billPending = Math.max(0, billTotal - billPaid);
+                  const billPending = Number(bill.pending_amount !== undefined && bill.pending_amount !== null ? bill.pending_amount : Math.max(0, billTotal - billPaid));
                   const itemsList = Array.isArray(bill.items) ? bill.items : [];
                   const isPaid = billPending <= 0.01;
                   const isPartial = !isPaid && billPaid > 0;

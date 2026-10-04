@@ -1377,7 +1377,7 @@ app.get('/api/shops/all-branch-bills', authenticateToken, requireShopStaff, asyn
 
     const summary = {
       total_bills: bills.length,
-      total_amount: bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+      total_amount: bills.reduce((sum, b) => sum + Number(b.current_invoice_total || b.total_amount || 0), 0),
       total_paid: bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0),
       total_pending: bills.reduce((sum, b) => sum + Number(b.pending_amount || 0), 0),
     };
@@ -1554,7 +1554,7 @@ async function handleShopWarehouseBills(req, res, targetShopId) {
 
     const summary = {
       total_invoices: bills.length,
-      total_amount: bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+      total_amount: bills.reduce((sum, b) => sum + Number(b.current_invoice_total || b.total_amount || 0), 0),
       total_paid: bills.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0),
       pending_due: bal.total_outstanding,
       opening_balance: bal.opening_balance,

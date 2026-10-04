@@ -449,6 +449,16 @@ export const generateInvoicePDFDoc = async (sale, customer = {}, shop = {}) => {
     rightRows.push({ label: '+ COURIER / EXPENSES', amount: formatMoney(courier), bold: false, color: [15, 118, 110] });
   }
 
+  const rawDiscount = Number(sale?.discount_amount || 0);
+  const impliedDiscount = (!rawDiscount && sale?.current_invoice_total && Number(sale.current_invoice_total) > 0 && Number(sale.current_invoice_total) < (productsSubtotal + courier - appliedCredit - advanceApplied))
+    ? Math.max(0, (productsSubtotal + courier - appliedCredit - advanceApplied) - Number(sale.current_invoice_total))
+    : 0;
+  const discountAmount = rawDiscount > 0 ? rawDiscount : impliedDiscount;
+
+  if (discountAmount > 0) {
+    rightRows.push({ label: '- DISCOUNT / ROUND OFF', amount: `-${formatMoney(discountAmount)}`, bold: false, color: [15, 118, 110] });
+  }
+
   let finalBillAmount = 0;
   let balanceDue = 0;
   let prevBalance = Number(sale?.previous_balance ?? sale?.old_balance ?? 0);
@@ -462,7 +472,9 @@ export const generateInvoicePDFDoc = async (sale, customer = {}, shop = {}) => {
       sale?.customer_pending_amount ??
       0
     );
-    const currentBillNet = Math.max(0, (productsSubtotal + courier) - appliedCredit - advanceApplied);
+    const currentBillNet = (sale?.current_invoice_total !== undefined && sale?.current_invoice_total !== null && Number(sale?.current_invoice_total) > 0)
+      ? Number(sale.current_invoice_total)
+      : Math.max(0, (productsSubtotal + courier - discountAmount) - appliedCredit - advanceApplied);
     const currentInvoiceDue = Math.max(0, currentBillNet - paidAmount);
 
     if (appliedCredit > 0) {
@@ -471,7 +483,7 @@ export const generateInvoicePDFDoc = async (sale, customer = {}, shop = {}) => {
     if (advanceApplied > 0) {
       rightRows.push({ label: '- STORE CREDIT / ADVANCE', amount: `-${formatMoney(advanceApplied)}`, bold: false, color: [15, 118, 110] });
     }
-    if (prevBalance !== 0) {
+    if (prevBalance !== 0 || discountAmount > 0) {
       rightRows.push({ label: 'Invoice Total', amount: formatMoney(currentBillNet), bold: false });
     }
     if (prevBalance > 0) {
@@ -1383,12 +1395,12 @@ export const formatWhatsAppMessage = ({
     const termsStr = isCash ? '💳 *Payment Terms:* Cash Only\n' : (inv.payment_terms_days ? `💳 *Payment Terms:* ${inv.payment_terms_days} Days\n` : '');
     const dueDate = isCash ? 'Immediate / On Receipt' : (inv.due_date ? formatDMY(inv.due_date) : 'On Receipt');
     
-    const totalAmount = Number(inv.total_amount || 0);
+    const totalAmount = Number(inv.current_invoice_total || inv.total_amount || 0);
     const paidAmount = Number(inv.paid_amount || 0);
     const prevBal = Number(inv?.previous_balance ?? inv?.old_balance ?? 0);
     const appliedCredit = Number(inv?.applied_credit_amount ?? 0);
     const advanceApplied = Number(inv?.advance_applied ?? 0);
-    const grandTotal = Number(inv.net_payable_amount ?? inv.total_amount ?? 0);
+    const grandTotal = Number(inv.net_payable_amount ?? inv.current_invoice_total ?? inv.total_amount ?? 0);
     const pendingAmount = Number(inv.closing_balance ?? inv.pending_amount ?? (grandTotal - paidAmount));
     
     let msg = `Dear ${custName},\n\nGreetings from *${shopName}*!\n\n📄 *TAX INVOICE: ${invNo}*\n📅 *Invoice Date:* ${invDate}\n${termsStr}⏰ *Due Date:* ${dueDate}\n\n`;
