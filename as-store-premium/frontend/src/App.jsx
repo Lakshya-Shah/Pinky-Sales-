@@ -3073,13 +3073,24 @@ function App() {
         setData((prev) => ({
           ...prev,
           customers: prev.customers.map((c) =>
-            Number(c.id) === Number(editingCustomer.id) ? { ...c, ...updated, ...quickCustomerForm } : c
+            Number(c.id) === Number(editingCustomer.id)
+              ? {
+                  ...c,
+                  ...updated,
+                  ...quickCustomerForm,
+                  opening_balance: quickCustomerForm.opening_balance !== '' && !isNaN(Number(quickCustomerForm.opening_balance))
+                    ? Number(quickCustomerForm.opening_balance)
+                    : Number(c.opening_balance || 0),
+                }
+              : c
           ),
         }));
         setQuickCustomerForm({ name: '', mobile: '', address: '', gstin: '', customer_type: 'retailer', opening_balance: '' });
         setEditingCustomer(null);
         setShowQuickAddCustomerModal(false);
         showToast('Customer updated successfully');
+        loadCustomersPage?.({ page: customerPager.page, currentShop: shopId, filters: customerFilters });
+        loadPendingPage?.();
       } else {
         const created = await authedFetch(`/customers${scoped}`, {
           method: 'POST',
@@ -5863,7 +5874,6 @@ function App() {
     if (!amount) return showToast('Enter payment amount first');
     const numericAmount = Number(amount);
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) return showToast('Enter a valid payment amount');
-    if (numericAmount > Number(paymentEntry.pending_amount || 0)) return showToast('Payment cannot exceed the pending balance');
     try {
       setSaving(true);
       try {
@@ -6173,9 +6183,7 @@ function App() {
       return showToast('Enter a valid payment amount greater than zero');
     }
     const maxPending = Number(paymentModalTarget.pending_amount || 0);
-    if (numericAmount > maxPending) {
-      return showToast(`Payment cannot exceed the pending balance of ${currency(maxPending)}`);
-    }
+    const excess = numericAmount > maxPending ? money(numericAmount - maxPending) : 0;
 
     try {
       setSaving(true);
@@ -6189,8 +6197,9 @@ function App() {
         ].filter(Boolean).join(' · '),
       };
 
-      if (paymentModalTarget.items || paymentModalTarget.customer_id) {
-        payload.customer_id = paymentModalTarget.customer_id;
+      const targetCustId = paymentModalTarget.customer_id || (paymentModalTarget.customer_name || paymentModalTarget.items ? paymentModalTarget.id : null);
+      if (targetCustId) {
+        payload.customer_id = targetCustId;
         payload.shop_id = paymentModalTarget.shop_id || shopId;
       } else {
         payload.sale_id = paymentModalTarget.id;
@@ -6201,7 +6210,11 @@ function App() {
         body: JSON.stringify(payload),
       });
 
-      showToast(`Payment of ${currency(numericAmount)} recorded successfully!`);
+      if (excess > 0) {
+        showToast(`Payment of ${currency(numericAmount)} recorded successfully (${currency(excess)} credited as advance)!`);
+      } else {
+        showToast(`Payment of ${currency(numericAmount)} recorded successfully!`);
+      }
       setPaymentModalTarget(null);
       setPaymentModalForm({ amount: '', mode: 'cash', reference_no: '', note: '', date: today() });
       await Promise.all([
@@ -10871,7 +10884,6 @@ function App() {
                       type="number"
                       step="any"
                       min="1"
-                      max={paymentModalTarget.pending_amount}
                       required
                       autoFocus
                       placeholder="Enter amount"
@@ -10879,6 +10891,16 @@ function App() {
                       value={paymentModalForm.amount}
                       onChange={(e) => setPaymentModalForm({ ...paymentModalForm, amount: e.target.value })}
                     />
+
+                    {/* Advance / Overpayment Indicator */}
+                    {Number(paymentModalForm.amount) > Number(paymentModalTarget.pending_amount || 0) && (
+                      <div className="mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800">
+                        <span className="font-medium">Advance / Overpayment:</span>
+                        <span className="font-extrabold text-emerald-700">
+                          +{currency(Number(paymentModalForm.amount) - Number(paymentModalTarget.pending_amount || 0))} (saved as credit)
+                        </span>
+                      </div>
+                    )}
 
                     {/* Quick Chips */}
                     <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -11051,14 +11073,13 @@ function App() {
                       type="number"
                       step="0.01"
                       placeholder="0.00"
-                      disabled={Boolean(editingCustomer)}
                       value={quickCustomerForm.opening_balance || ''}
                       onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, opening_balance: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none focus:border-teal-500 focus:bg-white transition-all font-mono text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none focus:border-teal-500 focus:bg-white transition-all font-mono text-xs"
                     />
-                    {editingCustomer && (
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">Opening balance can only be set during initial customer creation.</span>
-                    )}
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      Initial opening balance for customer ledger.
+                    </span>
                   </div>
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">Customer Type</label>
