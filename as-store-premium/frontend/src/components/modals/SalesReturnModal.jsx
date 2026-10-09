@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, RotateCcw, Package, AlertCircle, CheckCircle2, Loader2, Sparkles, ReceiptText, ArrowRight, ShieldCheck } from 'lucide-react';
+import { X, RotateCcw, Package, AlertCircle, CheckCircle2, Loader2, Sparkles, ReceiptText, ArrowRight, ShieldCheck, CircleDollarSign } from 'lucide-react';
 import SearchableCombobox from '../ui/SearchableCombobox';
 
 export default function SalesReturnModal({
@@ -18,7 +18,8 @@ export default function SalesReturnModal({
   currency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`,
   formatDateDMY = (d) => d || '',
 }) {
-  const [returnMode, setReturnMode] = useState('invoice'); // 'invoice' | 'standalone'
+  const [returnMode, setReturnMode] = useState('invoice'); // 'invoice' | 'standalone' | 'amount'
+  const [directAmount, setDirectAmount] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerInvoices, setCustomerInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
@@ -86,6 +87,7 @@ export default function SalesReturnModal({
       setSubmitting(false);
       setReason('');
       setRestockAll(true);
+      setDirectAmount('');
       setReturnDate(new Date().toISOString().slice(0, 10));
 
       const custId = initialCustomer?.id || initialSale?.customer_id || '';
@@ -178,10 +180,18 @@ export default function SalesReturnModal({
     }
   }, [returnMode, selectedSaleId, customerInvoices]);
 
+  // Selected customer object for dues & balance details
+  const selectedCustomerObj = useMemo(
+    () => (customers || []).find((c) => String(c.id) === String(selectedCustomerId)),
+    [customers, selectedCustomerId]
+  );
+
   // Calculate return total
-  const calculatedTotal = returnMode === 'invoice'
-    ? invoiceItems.filter((it) => it.selected).reduce((sum, it) => sum + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0)
-    : standaloneItems.reduce((sum, it) => sum + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0);
+  const calculatedTotal = returnMode === 'amount'
+    ? Math.max(0, Number(String(directAmount || '').replace(/,/g, '') || 0))
+    : (returnMode === 'invoice'
+        ? invoiceItems.filter((it) => it.selected).reduce((sum, it) => sum + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0)
+        : standaloneItems.reduce((sum, it) => sum + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0));
 
   const handleInvoiceItemToggle = (index) => {
     setInvoiceItems((prev) =>
@@ -241,7 +251,14 @@ export default function SalesReturnModal({
     }
 
     let itemsToSubmit = [];
-    if (returnMode === 'invoice') {
+    if (returnMode === 'amount') {
+      const numAmt = Number(String(directAmount || '').replace(/,/g, ''));
+      if (!Number.isFinite(numAmt) || numAmt <= 0) {
+        setError('Please enter a valid credit note amount greater than zero.');
+        return;
+      }
+      itemsToSubmit = [];
+    } else if (returnMode === 'invoice') {
       const selected = invoiceItems.filter((it) => it.selected && Number(it.quantity) > 0);
       if (selected.length === 0) {
         setError('Please select at least one item from the invoice to return.');
@@ -271,7 +288,7 @@ export default function SalesReturnModal({
     }
 
     if (calculatedTotal <= 0) {
-      setError('Total return amount must be greater than 0.');
+      setError(returnMode === 'amount' ? 'Please enter a valid credit note amount.' : 'Total return amount must be greater than 0.');
       return;
     }
 
@@ -282,9 +299,10 @@ export default function SalesReturnModal({
         body: JSON.stringify({
           shop_id: shopId,
           customer_id: Number(selectedCustomerId),
-          sale_id: returnMode === 'invoice' && selectedSaleId ? Number(selectedSaleId) : null,
+          sale_id: returnMode === 'invoice' && selectedSaleId ? Number(selectedSaleId) : (returnMode === 'amount' && selectedSaleId ? Number(selectedSaleId) : null),
           return_date: returnDate,
-          reason: reason || (returnMode === 'invoice' ? 'Return against invoice' : 'Customer return'),
+          reason: reason || (returnMode === 'invoice' ? 'Return against invoice' : (returnMode === 'amount' ? 'Direct Credit Note' : 'Customer return')),
+          amount: returnMode === 'amount' ? Number(String(directAmount || '').replace(/,/g, '')) : undefined,
           items: itemsToSubmit,
         }),
       });
@@ -383,7 +401,11 @@ export default function SalesReturnModal({
                   </div>
                   <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-500">
                     <li>Customer ledger now reflects available credit balance.</li>
-                    <li>Items have been returned into warehouse/branch inventory batches.</li>
+                    {createdCreditNote.items && createdCreditNote.items.length > 0 ? (
+                      <li>Items have been returned into warehouse/branch inventory batches.</li>
+                    ) : (
+                      <li>Financial credit recorded without modifying warehouse stock batches.</li>
+                    )}
                     <li>This credit note can be redeemed on future sales in the Bill Summary sidebar.</li>
                   </ul>
                 </div>
@@ -443,13 +465,13 @@ export default function SalesReturnModal({
                 {/* Mode Selector Tabs */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Return Workflow
+                    Credit Note Workflow
                   </label>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-100 p-1 rounded-xl">
                     <button
                       type="button"
                       onClick={() => setReturnMode('invoice')}
-                      className={`py-2 px-3 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      className={`py-2 px-2.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                         returnMode === 'invoice'
                           ? 'bg-white text-teal-800 shadow-2xs'
                           : 'text-slate-600 hover:text-slate-800'
@@ -460,16 +482,130 @@ export default function SalesReturnModal({
                     <button
                       type="button"
                       onClick={() => setReturnMode('standalone')}
-                      className={`py-2 px-3 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      className={`py-2 px-2.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                         returnMode === 'standalone'
                           ? 'bg-white text-teal-800 shadow-2xs'
                           : 'text-slate-600 hover:text-slate-800'
                       }`}
                     >
-                      <Package size={14} /> Standalone Customer Return
+                      <Package size={14} /> Standalone Item Return
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReturnMode('amount')}
+                      className={`py-2 px-2.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        returnMode === 'amount'
+                          ? 'bg-white text-teal-800 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-800'
+                      }`}
+                    >
+                      <CircleDollarSign size={14} /> Direct Amount (No Items)
                     </button>
                   </div>
                 </div>
+
+                {/* Direct Amount Only Section */}
+                {returnMode === 'amount' && (
+                  <div className="space-y-3.5 p-4 bg-teal-50/60 rounded-xl border border-teal-200">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                          Credit Note Amount (₹) *
+                        </label>
+                        {selectedCustomerObj && (Number(selectedCustomerObj.pending || selectedCustomerObj.current_balance || 0) > 0) && (
+                          <span className="text-[11px] font-extrabold text-rose-600">
+                            Current Due: {currency(Number(selectedCustomerObj.pending || selectedCustomerObj.current_balance || 0))}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">₹</span>
+                        <input
+                          type="number"
+                          step="any"
+                          min="1"
+                          required
+                          autoFocus
+                          placeholder="Enter credit note amount, e.g. 5000"
+                          value={directAmount}
+                          onChange={(e) => setDirectAmount(e.target.value)}
+                          onPaste={(e) => {
+                            const pasteData = e.clipboardData.getData('text');
+                            const cleaned = pasteData.replace(/[^0-9.]/g, '');
+                            if (cleaned && !isNaN(cleaned)) {
+                              e.preventDefault();
+                              setDirectAmount(cleaned);
+                            }
+                          }}
+                          className="w-full h-11 pl-8 pr-3 text-base font-black text-slate-900 bg-white border border-teal-300 rounded-xl focus:border-teal-600 focus:outline-none shadow-2xs"
+                        />
+                      </div>
+
+                      {/* Quick Amount Chips */}
+                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                        {selectedCustomerObj && Number(selectedCustomerObj.pending || selectedCustomerObj.current_balance || 0) > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setDirectAmount(String(selectedCustomerObj.pending || selectedCustomerObj.current_balance))}
+                              className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-teal-100 hover:bg-teal-200 text-teal-800 border border-teal-300 transition-colors cursor-pointer"
+                            >
+                              Full Due ({currency(Number(selectedCustomerObj.pending || selectedCustomerObj.current_balance))})
+                            </button>
+                            {Number(selectedCustomerObj.pending || selectedCustomerObj.current_balance || 0) > 1000 && (
+                              <button
+                                type="button"
+                                onClick={() => setDirectAmount(String(Math.round(Number(selectedCustomerObj.pending || selectedCustomerObj.current_balance) / 2)))}
+                                className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
+                              >
+                                50% ({currency(Math.round(Number(selectedCustomerObj.pending || selectedCustomerObj.current_balance) / 2))})
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {[500, 1000, 2000, 5000, 10000].map((presetAmt) => (
+                          <button
+                            key={presetAmt}
+                            type="button"
+                            onClick={() => setDirectAmount(String(presetAmt))}
+                            className="px-2 py-0.5 text-[10.5px] font-semibold rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                          >
+                            +₹{presetAmt.toLocaleString('en-IN')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Optional Invoice Association */}
+                    {customerInvoices.length > 0 && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                          Apply Towards Specific Invoice (Optional)
+                        </label>
+                        <select
+                          value={selectedSaleId}
+                          onChange={(e) => setSelectedSaleId(e.target.value)}
+                          className="w-full h-10 px-3 text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-xl focus:border-teal-500 focus:outline-none cursor-pointer"
+                        >
+                          <option value="">Auto-deduct across open invoices / customer credit</option>
+                          {customerInvoices.map((inv) => (
+                            <option key={inv.id} value={inv.id}>
+                              {inv.invoice_number || `INV-${String(inv.id).padStart(6, '0')}`} · {formatDateDMY(inv.invoice_date || inv.sale_date)} · Pending: ₹{Number(inv.pending_amount).toLocaleString('en-IN')}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="p-2.5 rounded-lg bg-white border border-teal-200/80 text-[11.5px] text-teal-800 flex items-center gap-2">
+                      <Sparkles size={14} className="shrink-0 text-teal-600" />
+                      <span>
+                        Direct credit notes record financial / accounting credit without returning products or altering warehouse inventory.
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Return Against Invoice Section */}
                 {returnMode === 'invoice' && (
@@ -657,17 +793,20 @@ export default function SalesReturnModal({
                 <div className="space-y-3 pt-1">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      Return Reason / Notes
+                      {returnMode === 'amount' ? 'Credit Reason / Notes' : 'Return Reason / Notes'}
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Defective screen, Touch glitch, Customer return, Wrong variant..."
+                      placeholder={returnMode === 'amount' ? 'e.g. Rate difference, Discount rebate, Goodwill credit, Settlement adjustment...' : 'e.g. Defective screen, Touch glitch, Customer return, Wrong variant...'}
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       className="w-full h-10 px-3 text-xs font-medium bg-white border border-slate-200 rounded-xl focus:border-teal-500 focus:outline-none"
                     />
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      {['Defective display', 'Customer exchange', 'Dead on arrival', 'Wrong item ordered'].map((preset) => (
+                      {(returnMode === 'amount'
+                        ? ['Rate difference', 'Discount / Rebate', 'Volume incentive', 'Defect compensation', 'Goodwill credit', 'Balance adjustment']
+                        : ['Defective display', 'Customer exchange', 'Dead on arrival', 'Wrong item ordered']
+                      ).map((preset) => (
                         <button
                           key={preset}
                           type="button"
@@ -680,23 +819,25 @@ export default function SalesReturnModal({
                     </div>
                   </div>
 
-                  {/* Restock Inventory Toggle */}
-                  <label className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={restockAll}
-                      onChange={(e) => setRestockAll(e.target.checked)}
-                      className="w-4 h-4 text-emerald-600 rounded cursor-pointer accent-emerald-600"
-                    />
-                    <div>
-                      <strong className="text-emerald-950 block text-xs font-bold">
-                        Restock returned items back into stock
-                      </strong>
-                      <span className="text-[11px] text-emerald-800">
-                        Automatically increment inventory batch counts and sync current stock in this warehouse/branch.
-                      </span>
-                    </div>
-                  </label>
+                  {/* Restock Inventory Toggle (only applicable when items are returned) */}
+                  {returnMode !== 'amount' && (
+                    <label className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={restockAll}
+                        onChange={(e) => setRestockAll(e.target.checked)}
+                        className="w-4 h-4 text-emerald-600 rounded cursor-pointer accent-emerald-600"
+                      />
+                      <div>
+                        <strong className="text-emerald-950 block text-xs font-bold">
+                          Restock returned items back into stock
+                        </strong>
+                        <span className="text-[11px] text-emerald-800">
+                          Automatically increment inventory batch counts and sync current stock in this warehouse/branch.
+                        </span>
+                      </div>
+                    </label>
+                  )}
                 </div>
 
                 {/* Bottom Summary & Actions */}

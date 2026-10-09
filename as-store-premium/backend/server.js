@@ -5385,13 +5385,16 @@ app.get(['/api/credit-notes', '/credit-notes'], authenticateToken, requireShopSt
 app.post(['/api/credit-notes', '/credit-notes'], authenticateToken, requireShopStaff, async (req, res) => {
   try {
     const shopId = requireScopedShopId(req, req.body.shop_id);
-    const { customer_id, sale_id, reason = '', return_date, items = [] } = req.body;
+    const { customer_id, sale_id, reason = '', return_date, items = [], amount, credit_amount } = req.body;
 
     if (!customer_id) {
       return res.status(400).json({ error: 'Please select a customer.' });
     }
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'At least one product item must be returned.' });
+    const hasItems = Array.isArray(items) && items.length > 0;
+    const directAmount = money(Number(amount ?? credit_amount ?? 0));
+
+    if (!hasItems && directAmount <= 0) {
+      return res.status(400).json({ error: 'Please select return items or enter a credit note amount greater than zero.' });
     }
 
     const returnDateStr = /^\d{4}-\d{2}-\d{2}$/.test(String(return_date || ''))
@@ -5423,42 +5426,46 @@ app.post(['/api/credit-notes', '/credit-notes'], authenticateToken, requireShopS
         }
       }
 
-      // 3. Validate returned items
+      // 3. Validate returned items or direct credit amount
       const validatedItems = [];
       let totalAmount = 0;
-      for (const item of items) {
-        const productId = Number(item.product_id);
-        const qty = Number(item.quantity);
-        const unitPrice = money(item.unit_price);
-        if (!productId || isNaN(qty) || qty <= 0 || unitPrice < 0) {
-          const error = new Error('Invalid product, quantity, or unit price in return items.');
-          error.status = 400;
-          throw error;
-        }
-        const prod = await tx.getRecord('SELECT id, name, short_name FROM products WHERE id = ?', [productId]);
-        if (!prod) {
-          const error = new Error(`Product ID ${productId} not found.`);
-          error.status = 404;
-          throw error;
-        }
+      if (hasItems) {
+        for (const item of items) {
+          const productId = Number(item.product_id);
+          const qty = Number(item.quantity);
+          const unitPrice = money(item.unit_price);
+          if (!productId || isNaN(qty) || qty <= 0 || unitPrice < 0) {
+            const error = new Error('Invalid product, quantity, or unit price in return items.');
+            error.status = 400;
+            throw error;
+          }
+          const prod = await tx.getRecord('SELECT id, name, short_name FROM products WHERE id = ?', [productId]);
+          if (!prod) {
+            const error = new Error(`Product ID ${productId} not found.`);
+            error.status = 404;
+            throw error;
+          }
 
-        const lineTotal = money(qty * unitPrice);
-        totalAmount += lineTotal;
-        validatedItems.push({
-          product_id: productId,
-          product_name: prod.short_name || prod.name,
-          quantity: qty,
-          unit_price: unitPrice,
-          total_amount: lineTotal,
-          colour: item.colour ? String(item.colour).trim() : null,
-          restock_inventory: item.restock_inventory !== false,
-          return_reason: item.return_reason || reason || 'Customer return',
-        });
+          const lineTotal = money(qty * unitPrice);
+          totalAmount += lineTotal;
+          validatedItems.push({
+            product_id: productId,
+            product_name: prod.short_name || prod.name,
+            quantity: qty,
+            unit_price: unitPrice,
+            total_amount: lineTotal,
+            colour: item.colour ? String(item.colour).trim() : null,
+            restock_inventory: item.restock_inventory !== false,
+            return_reason: item.return_reason || reason || 'Customer return',
+          });
+        }
+        totalAmount = money(totalAmount);
+      } else {
+        totalAmount = directAmount;
       }
 
-      totalAmount = money(totalAmount);
       if (totalAmount <= 0) {
-        const error = new Error('Total return amount must be greater than zero.');
+        const error = new Error('Credit note amount must be greater than zero.');
         error.status = 400;
         throw error;
       }
@@ -5535,7 +5542,7 @@ app.post(['/api/credit-notes', '/credit-notes'], authenticateToken, requireShopS
           credit_note_number, shop_id, customer_id, sale_id, amount, used_amount, balance_amount,
           reason, status, return_date, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [creditNoteNumber, shopId, customer_id, sale_id || null, totalAmount, usedAmount, remainingReturnToApply, reason || 'Sales return', creditNoteStatus, returnDateStr, req.user.id]
+        [creditNoteNumber, shopId, customer_id, sale_id || null, totalAmount, usedAmount, remainingReturnToApply, reason || (hasItems ? 'Sales return' : 'Direct Credit Note'), creditNoteStatus, returnDateStr, req.user.id]
       );
       const creditNoteId = cnInsert.id;
 
