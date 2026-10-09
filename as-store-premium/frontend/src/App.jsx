@@ -227,6 +227,7 @@ const currency = (value) => {
   }
   return `\u20b9${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
+const money = (v) => Math.round(Number(v || 0) * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
 const compactModelName = (value) => {
   const name = String(value || 'Unnamed product').trim();
@@ -4087,7 +4088,11 @@ function App() {
       if (filters?.date) params.set('date', filters.date);
       const response = await authedFetch(`/pending-payments?${params.toString()}`);
       const rows = getPaginatedRows(response);
-      setData((prev) => ({ ...prev, pending: rows }));
+      setData((prev) => ({ 
+        ...prev, 
+        pending: rows,
+        pendingSummary: response?.summary || null,
+      }));
       updatePagerFromResponse(setPendingPager, response, page, rows, ['totalPendingCustomers']);
     } catch (error) {
       handleLoadError(error, 'Unable to load pending payments right now.');
@@ -4213,7 +4218,7 @@ function App() {
     setTabLoading(true);
     try {
       setLoadError('');
-      const dashboardShopId = currentShop || (role === 'superadmin' ? '' : (session?.shop_id || ''));
+      const dashboardShopId = role === 'superadmin' ? '' : (currentShop || session?.shop_id || '');
       const scoped = currentShop ? `?shopId=${currentShop}` : '';
       const dashboardScoped = dashboardShopId ? `?shopId=${dashboardShopId}` : '';
       const set = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
@@ -6502,14 +6507,16 @@ function App() {
   const submitRecordPaymentModal = async (e) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
     if (!paymentModalTarget) return;
-    const numericAmount = Number(paymentModalForm.amount);
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      return showToast('Enter a valid payment amount greater than zero');
-    }
-    const maxPending = Number(paymentModalTarget.pending_amount || 0);
-    const excess = numericAmount > maxPending ? money(numericAmount - maxPending) : 0;
 
     try {
+      const cleanAmountStr = String(paymentModalForm.amount ?? '').replace(/,/g, '').trim();
+      const numericAmount = Number(cleanAmountStr);
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return showToast('Enter a valid payment amount greater than zero');
+      }
+      const maxPending = Number(paymentModalTarget.pending_amount || 0);
+      const excess = numericAmount > maxPending ? money(numericAmount - maxPending) : 0;
+
       setSaving(true);
       const payload = {
         amount: numericAmount,
@@ -7871,19 +7878,25 @@ function App() {
 
   const pendingMetrics = useMemo(() => {
     const list = data.pending || [];
-    const totalPendingAmount = list.reduce((sum, item) => sum + Math.max(0, Number(item.pending_amount || 0)), 0);
-    const totalCustomers = list.length;
+    const summary = data.pendingSummary;
+    const totalPendingAmount = summary?.totalPendingAmount != null
+      ? Number(summary.totalPendingAmount)
+      : list.reduce((sum, item) => sum + Math.max(0, Number(item.pending_amount || 0)), 0);
+    const totalCustomers = summary?.totalCustomers != null
+      ? Number(summary.totalCustomers)
+      : (pendingPager.total || list.length);
     let overdueCustomers = 0;
     let dueTodayCustomers = 0;
-    let totalPendingInvoices = 0;
+    let totalPendingInvoices = summary?.totalPendingInvoices != null ? Number(summary.totalPendingInvoices) : 0;
 
     list.forEach((item) => {
       const info = getDueDateInfo(item.due_date);
       if (info.type === 'overdue') overdueCustomers += 1;
       if (info.type === 'today') dueTodayCustomers += 1;
-      // Invoices with Pending Amount <= 0 must not be counted in the pending invoice count
-      const activeInvs = (item.items || []).filter(inv => Number(inv.pending_amount || 0) > 0);
-      totalPendingInvoices += (activeInvs.length > 0 ? activeInvs.length : (Number(item.pending_amount || 0) > 0 ? 1 : 0));
+      if (summary?.totalPendingInvoices == null) {
+        const activeInvs = (item.items || []).filter(inv => Number(inv.pending_amount || 0) > 0);
+        totalPendingInvoices += (activeInvs.length > 0 ? activeInvs.length : (Number(item.pending_amount || 0) > 0 ? 1 : 0));
+      }
     });
 
     return {
@@ -7893,7 +7906,7 @@ function App() {
       dueTodayCustomers,
       totalPendingInvoices,
     };
-  }, [data.pending]);
+  }, [data.pending, data.pendingSummary, pendingPager.total]);
 
   const filteredPendingCustomers = useMemo(() => {
     let list = data.pending || [];
@@ -8034,8 +8047,9 @@ function App() {
     if (fromTotals > 0) return fromTotals;
     return dashboardAvailability.reduce((sum, item) => sum + Number(item.warehouse_stock || 0), 0);
   }, [data.dashboard?.totals?.warehouse_stock, dashboardAvailability]);
+  const activeBranchesList = (data.shops || []).filter((shop) => shop.location_type !== 'warehouse' && shop.status !== 'inactive');
   const dashboardBranchPerformance = data.dashboard?.shopWise?.filter((shop) => shop.location_type !== 'warehouse') || [];
-  const dashboardShopCount = dashboardBranchPerformance.length || data.dashboard?.totals?.total_shops || 0;
+  const dashboardShopCount = activeBranchesList.length || Number(data.dashboard?.totals?.total_branches || 0) || dashboardBranchPerformance.length || data.dashboard?.totals?.total_shops || 0;
   const globalQueryTokens = useMemo(() => {
     return globalSearch.toLowerCase().trim().split(/\s+/).filter(Boolean);
   }, [globalSearch]);
@@ -10322,6 +10336,7 @@ function App() {
                                           mode: 'cash',
                                           reference_no: '',
                                           note: '',
+                                          date: today(),
                                         });
                                       }}
                                       className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
@@ -11602,6 +11617,7 @@ function App() {
                         mode: 'cash',
                         reference_no: '',
                         note: '',
+                        date: today(),
                       });
                     }}
                     className="flex-1 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl font-extrabold text-xs shadow-md shadow-teal-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -11692,6 +11708,14 @@ function App() {
                       className="w-full text-base font-bold px-3 py-2 rounded-xl border border-slate-200 focus:border-teal-500 focus:outline-none bg-white text-slate-900"
                       value={paymentModalForm.amount}
                       onChange={(e) => setPaymentModalForm({ ...paymentModalForm, amount: e.target.value })}
+                      onPaste={(e) => {
+                        const pasteData = e.clipboardData.getData('text');
+                        const cleaned = pasteData.replace(/[^0-9.]/g, '');
+                        if (cleaned && !isNaN(cleaned)) {
+                          e.preventDefault();
+                          setPaymentModalForm({ ...paymentModalForm, amount: cleaned });
+                        }
+                      }}
                     />
 
                     {/* Advance / Overpayment Indicator */}

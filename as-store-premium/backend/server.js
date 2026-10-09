@@ -689,7 +689,25 @@ const getShopsForUser = async (user) => {
       )) AS warehouse_bills_pending,
       CASE 
         WHEN sh.location_type = 'warehouse' THEN
-          (COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0))
+          COALESCE((
+            SELECT SUM(customer_pending)
+            FROM (
+              SELECT
+                GREATEST(0, (
+                  GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
+                    (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
+                     WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
+                  )))
+                  + COALESCE(SUM(CASE WHEN sa.status NOT IN ('cancelled', 'void', 'draft') THEN sa.pending_amount ELSE 0 END), 0)
+                  - COALESCE(c.advance_balance, 0)
+                )) AS customer_pending
+              FROM customers c
+              LEFT JOIN sales sa ON sa.customer_id = c.id AND sa.shop_id = sh.id
+              WHERE c.shop_id = sh.id
+              GROUP BY c.id, c.opening_balance, c.advance_balance
+            ) c_dues
+            WHERE customer_pending > 0
+          ), 0)
         ELSE
           GREATEST(
             GREATEST(0, (
@@ -698,7 +716,7 @@ const getShopsForUser = async (user) => {
               - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = COALESCE(c_match.id, sh.customer_id) AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') != 'credit_note'), 0)
               - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = COALESCE(c_match.id, sh.customer_id) AND cn2.status != 'cancelled'), 0)
             )),
-            (COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0))
+            (COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id AND sa.status NOT IN ('cancelled', 'void')), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0))
           )
       END AS pending
     FROM shops sh
@@ -994,6 +1012,7 @@ app.get('/api/dashboard', authenticateToken, requireShopStaff, async (req, res) 
   const [totals, lowStock, shopWise, topProducts, salesTrendRows, pendingTrendRows, modelAvailability] = await Promise.all([
     getRecord(`
       SELECT
+        (SELECT COUNT(*) FROM shops WHERE status = 'active' AND location_type != 'warehouse') AS total_branches,
         (SELECT COUNT(*) FROM shops WHERE status = 'active' ${shopId ? 'AND id = ?' : ''}) AS total_shops,
         (SELECT COALESCE(SUM(ib.quantity_remaining), 0) FROM inventory_batches ib WHERE 1 = 1 ${visibleBatchShopScope} ${visibleBatchAccess}) AS total_stock,
         (SELECT COALESCE(SUM(ib.quantity_remaining), 0) FROM inventory_batches ib JOIN shops wh ON wh.id = ib.shop_id WHERE wh.location_type = 'warehouse') AS warehouse_stock,
@@ -7314,7 +7333,7 @@ app.get('/api/pending-payments', authenticateToken, requireShopStaff, async (req
   }
   const netBalanceSql = `(
     COALESCE(c.opening_balance, 0)
-    + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id), 0)
+    + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void')), 0)
     - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = c.id AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') != 'credit_note'), 0)
     - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = c.id AND cn2.status != 'cancelled'), 0)
   )`;
@@ -7377,76 +7396,96 @@ app.get('/api/pending-payments', authenticateToken, requireShopStaff, async (req
     GROUP BY c.id, c.name, c.mobile, c.address, c.shop_id, sh.id, sh.name, sh.area, sh.address, sh.phone
     HAVING (${netBalanceSql}) > 0
   `;
-  const rows = await runPaginatedList({
-    dataSql: `
-    SELECT
-      'customer-' || c.shop_id || ':' || c.id AS id,
-      c.id AS customer_id,
-      c.shop_id,
-      c.name AS customer_name,
-      c.mobile AS mobile,
-      c.address AS address,
-      sh.name AS shop_name,
-      sh.area AS shop_area,
-      sh.address AS shop_address,
-      sh.phone AS shop_phone,
-      COALESCE(SUM(sa.total_amount), 0) AS total_amount,
-      COALESCE(SUM(sa.paid_amount), 0) AS paid_amount,
-      GREATEST(0, ${netBalanceSql}) AS pending_amount,
-      COALESCE(c.opening_balance, 0) AS opening_balance,
-      GREATEST(0, -1 * (${netBalanceSql})) AS advance_balance,
-      (ARRAY_AGG(sa.due_date ORDER BY ${groupOrderSql}) FILTER (WHERE sa.id IS NOT NULL))[1] AS due_date,
-      COALESCE(JSON_AGG(JSON_BUILD_OBJECT(
-        'id', sa.id,
-        'invoice_number', COALESCE(sa.invoice_number, 'INV-' || LPAD(sa.id::TEXT, 6, '0')),
-        'shop_id', sa.shop_id,
-        'product_id', sa.product_id,
-        'customer_id', sa.customer_id,
-        'quantity', sa.quantity,
-        'total_amount', sa.total_amount,
-        'paid_amount', sa.paid_amount,
-        'pending_amount', sa.pending_amount,
-        'products_total', sa.products_total,
-        'extra_expenses_total', sa.extra_expenses_total,
-        'discount_amount', sa.discount_amount,
-        'due_date', sa.due_date,
-        'sale_date', sa.sale_date,
-        'invoice_date', COALESCE(sa.invoice_date::TEXT, sa.sale_date::TEXT),
-        'notes', sa.notes,
-        'status', sa.status,
-        'created_by', sa.created_by,
-        'payment_mode', sa.payment_mode,
-        'price_type', sa.price_type,
-        'product_name', p.name,
-        'product_short_name', p.short_name,
-        'full_model_list', p.full_model_list,
-        'brand', p.brand,
-        'brand_name', COALESCE(mb.name, p.brand),
-        'mfg_brand', COALESCE(mb.name, p.brand),
-        'category', p.category,
-        'description', p.description,
-        'manufacturing_brand_id', sa.manufacturing_brand_id,
-        'manufacturing_brand_name', COALESCE(mb.name, p.brand),
-        'customer_name', c.name,
-        'mobile', c.mobile,
-        'address', c.address,
-        'shop_name', sh.name,
-        'shop_area', sh.area,
-        'shop_address', sh.address,
-        'shop_phone', sh.phone,
-        'display_name', COALESCE(p.short_name, p.name),
-        'items', COALESCE(si_agg.items, JSON_BUILD_ARRAY()),
-        'expenses', COALESCE(se.expenses, '[]'::json),
-        'payments', COALESCE(pm.payments, '[]'::json)
-      ) ORDER BY ${groupOrderSql}) FILTER (WHERE sa.id IS NOT NULL), '[]'::json) AS items
-    ${baseSql}
-    ORDER BY pending_amount DESC
-  `,
-    countSql: `SELECT COUNT(*) AS total FROM (SELECT 1 ${baseSql}) counted`,
-    params,
-    pagination,
-    totalKey: 'totalPendingCustomers',
-  });
+  const [rows, summaryRow] = await Promise.all([
+    runPaginatedList({
+      dataSql: `
+      SELECT
+        'customer-' || c.shop_id || ':' || c.id AS id,
+        c.id AS customer_id,
+        c.shop_id,
+        c.name AS customer_name,
+        c.mobile AS mobile,
+        c.address AS address,
+        sh.name AS shop_name,
+        sh.area AS shop_area,
+        sh.address AS shop_address,
+        sh.phone AS shop_phone,
+        COALESCE(SUM(sa.total_amount), 0) AS total_amount,
+        COALESCE(SUM(sa.paid_amount), 0) AS paid_amount,
+        GREATEST(0, ${netBalanceSql}) AS pending_amount,
+        COALESCE(c.opening_balance, 0) AS opening_balance,
+        GREATEST(0, -1 * (${netBalanceSql})) AS advance_balance,
+        (ARRAY_AGG(sa.due_date ORDER BY ${groupOrderSql}) FILTER (WHERE sa.id IS NOT NULL))[1] AS due_date,
+        COALESCE(JSON_AGG(JSON_BUILD_OBJECT(
+          'id', sa.id,
+          'invoice_number', COALESCE(sa.invoice_number, 'INV-' || LPAD(sa.id::TEXT, 6, '0')),
+          'shop_id', sa.shop_id,
+          'product_id', sa.product_id,
+          'customer_id', sa.customer_id,
+          'quantity', sa.quantity,
+          'total_amount', sa.total_amount,
+          'paid_amount', sa.paid_amount,
+          'pending_amount', sa.pending_amount,
+          'products_total', sa.products_total,
+          'extra_expenses_total', sa.extra_expenses_total,
+          'discount_amount', sa.discount_amount,
+          'due_date', sa.due_date,
+          'sale_date', sa.sale_date,
+          'invoice_date', COALESCE(sa.invoice_date::TEXT, sa.sale_date::TEXT),
+          'notes', sa.notes,
+          'status', sa.status,
+          'created_by', sa.created_by,
+          'payment_mode', sa.payment_mode,
+          'price_type', sa.price_type,
+          'product_name', p.name,
+          'product_short_name', p.short_name,
+          'full_model_list', p.full_model_list,
+          'brand', p.brand,
+          'brand_name', COALESCE(mb.name, p.brand),
+          'mfg_brand', COALESCE(mb.name, p.brand),
+          'category', p.category,
+          'description', p.description,
+          'manufacturing_brand_id', sa.manufacturing_brand_id,
+          'manufacturing_brand_name', COALESCE(mb.name, p.brand),
+          'customer_name', c.name,
+          'mobile', c.mobile,
+          'address', c.address,
+          'shop_name', sh.name,
+          'shop_area', sh.area,
+          'shop_address', sh.address,
+          'shop_phone', sh.phone,
+          'display_name', COALESCE(p.short_name, p.name),
+          'items', COALESCE(si_agg.items, JSON_BUILD_ARRAY()),
+          'expenses', COALESCE(se.expenses, '[]'::json),
+          'payments', COALESCE(pm.payments, '[]'::json)
+        ) ORDER BY ${groupOrderSql}) FILTER (WHERE sa.id IS NOT NULL), '[]'::json) AS items
+      ${baseSql}
+      ORDER BY pending_amount DESC
+    `,
+      countSql: `SELECT COUNT(*) AS total FROM (SELECT 1 ${baseSql}) counted`,
+      params,
+      pagination,
+      totalKey: 'totalPendingCustomers',
+    }),
+    getRecord(`
+      SELECT 
+        COALESCE(SUM(customer_pending), 0) AS total_pending_amount,
+        COALESCE(COUNT(*), 0) AS total_customers,
+        COALESCE(SUM(total_invoices), 0) AS total_pending_invoices
+      FROM (
+        SELECT 
+          GREATEST(0, ${netBalanceSql}) AS customer_pending,
+          COUNT(DISTINCT CASE WHEN sa.status NOT IN ('cancelled', 'void') AND sa.pending_amount > 0 THEN sa.id END) AS total_invoices
+        ${baseSql}
+      ) pending_summary
+      WHERE customer_pending > 0
+    `, params),
+  ]);
+  rows.summary = {
+    totalPendingAmount: Number(summaryRow?.total_pending_amount || 0),
+    totalCustomers: Number(summaryRow?.total_customers || rows.total || 0),
+    totalPendingInvoices: Number(summaryRow?.total_pending_invoices || 0),
+  };
   res.json(rows);
 });
 
@@ -8163,13 +8202,31 @@ app.get('/api/reports', authenticateToken, requireShopStaff, async (req, res) =>
   const isSuper = req.user.role === 'superadmin';
   const shopId = isShopStaffRole(req.user.role) ? Number(req.user.shop_id) : scopeShopId(req);
   const pendingByShop = await allRecords(`
-    SELECT sh.name AS shop_name, 
-      (COALESCE(SUM(sa.pending_amount), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0)) AS pending
+    SELECT sh.id AS shop_id, sh.name AS shop_name, sh.area AS shop_area, sh.location_type,
+      COALESCE((
+        SELECT SUM(customer_pending)
+        FROM (
+          SELECT
+            GREATEST(0, (
+              GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
+                (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
+                 WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
+              )))
+              + COALESCE(SUM(CASE WHEN sa.status NOT IN ('cancelled', 'void', 'draft') THEN sa.pending_amount ELSE 0 END), 0)
+              - COALESCE(c.advance_balance, 0)
+            )) AS customer_pending
+          FROM customers c
+          LEFT JOIN sales sa ON sa.customer_id = c.id AND sa.shop_id = sh.id
+          WHERE c.shop_id = sh.id
+          GROUP BY c.id, c.opening_balance, c.advance_balance
+        ) c_dues
+        WHERE customer_pending > 0
+      ), 0) AS pending
     FROM shops sh
-    LEFT JOIN sales sa ON sa.shop_id = sh.id
-    ${isSuper ? (shopId ? 'WHERE sh.id = ?' : '') : "WHERE sh.id = ? AND sh.location_type != 'warehouse'"}
-    GROUP BY sh.id, sh.name
-    ORDER BY pending DESC
+    WHERE sh.status = 'active'
+    ${isSuper ? (shopId ? 'AND sh.id = ?' : '') : "AND sh.id = ? AND sh.location_type != 'warehouse'"}
+    GROUP BY sh.id, sh.name, sh.area, sh.location_type
+    ORDER BY pending DESC, sh.name ASC
   `, shopId ? [shopId] : []);
   const auditRows = isShopStaffRole(req.user.role)
     ? await allRecords("SELECT * FROM audit_logs WHERE actor_id = ? AND action = 'Created sale' ORDER BY id DESC LIMIT 25", [req.user.id])
