@@ -15,3 +15,8 @@
 ### 3. Customer Opening Balance Immutability During Sales
 - **Master Record Integrity**: `customers.opening_balance` must NEVER be modified or inferred when creating (`POST /sales`) or updating (`PUT /sales/:id`) sales invoices.
 - **Previous Balance Snapshot**: `sales.previous_balance` is purely a historical snapshot at the moment an invoice is created/edited. It must never overwrite customer records or insert spurious `OPENING_BALANCE` entries into `ledger_entries`. Customer opening balances can only be set during customer creation or via explicit customer master record edits.
+
+### 4. Store Credit & Advance Adjustment Payments Exclusion
+- **Internal Payment Exclusion**: Internal adjustment payments recorded in `payments` with `payment_mode = 'store_credit'` (e.g. from customer advance deductions during sales checkout) MUST be excluded (`WHERE COALESCE(payment_mode, '') NOT IN ('credit_note', 'store_credit')`) from customer party ledger rows and real payments received sums.
+- **Source Document Rule**: The customer's original cash/bank advance deposit (or opening balance) is the sole source document providing the credit in the ledger. The sales invoice (`INV-xxxxxx`) is the document that debits the ledger, lessening the customer's available credit. Including internal `store_credit` payment logs as credit rows would double-credit the customer and prevent invoices from decreasing available store credit.
+

@@ -669,8 +669,85 @@ async function runTests() {
 
     console.log('✔ Test 13 Passed: Customer opening balance is strictly immutable during sales creation and updates.');
 
+    // ── TEST GROUP 14: Store Credit & Advance Deduction Party Ledger Integrity ──
+    console.log('\n── TEST GROUP 14: Store Credit & Advance Deduction Party Ledger Integrity ──');
+    let customer7Id;
+    const cust7Res = await runQuery(
+      `INSERT INTO customers (shop_id, name, mobile, address, opening_balance, advance_balance, opening_balance_date)
+       VALUES (?, 'Test Cust 7 Store Credit Advance', '9999900007', 'Advance Avenue', 0.00, 50000.00, '2026-08-01') RETURNING id`,
+      [shopId]
+    );
+    customer7Id = cust7Res.rows ? cust7Res.rows[0].id : cust7Res.id;
+
+    // 1. Initial advance cash payment of ₹50,000
+    const advDepPay = await runQuery(
+      `INSERT INTO payments (shop_id, customer_id, amount, payment_mode, payment_date, note, unallocated_amount)
+       VALUES (?, ?, 50000.00, 'cash', '2026-08-01', 'Initial customer advance deposit', 50000.00) RETURNING id`,
+      [shopId, customer7Id]
+    );
+    await runQuery(
+      `INSERT INTO payment_allocations (payment_id, customer_id, allocation_type, amount_applied, notes)
+       VALUES (?, ?, 'advance', 50000.00, 'Advance allocation')`,
+      [advDepPay.id, customer7Id]
+    );
+
+    // Initial check: ledger should show 50,000 Cr (-50,000)
+    const initLedger = await getCustomerLedger(customer7Id, shopId);
+    assert.strictEqual(Number(initLedger.closing_balance), -50000.00, 'Initial ledger closing balance must be -₹50,000.00 (Cr)');
+
+    // 2. Customer buys ₹15,000 invoice covered entirely by advance
+    const advSaleRes = await runQuery(
+      `INSERT INTO sales (shop_id, customer_id, product_id, quantity, total_amount, paid_amount, pending_amount, sale_date, invoice_date, previous_balance, current_invoice_total, advance_applied, status)
+       VALUES (?, ?, ?, 1, 15000.00, 15000.00, 0.00, '2026-08-10', '2026-08-10', 0.00, 15000.00, 15000.00, 'paid') RETURNING id`,
+      [shopId, customer7Id, testProduct.id]
+    );
+    const advSaleId = advSaleRes.rows ? advSaleRes.rows[0].id : advSaleRes.id;
+
+    // Internal payment voucher logged with payment_mode = 'store_credit'
+    const scPayRes = await runQuery(
+      `INSERT INTO payments (shop_id, customer_id, sale_id, amount, payment_mode, payment_date, note)
+       VALUES (?, ?, ?, 15000.00, 'store_credit', '2026-08-10', 'Auto-adjusted from Customer Advance / Store Credit') RETURNING id`,
+      [shopId, customer7Id, advSaleId]
+    );
+    await runQuery(
+      `INSERT INTO payment_allocations (payment_id, customer_id, sale_id, allocation_type, amount_applied, notes)
+       VALUES (?, ?, ?, 'invoice', 15000.00, 'Store credit adjusted')`,
+      [scPayRes.id, customer7Id, advSaleId]
+    );
+
+    // Update customer balances: advance decreases to 35,000, current_balance is -35,000
+    await runQuery(
+      'UPDATE customers SET current_balance = -35000.00, advance_balance = 35000.00 WHERE id = ?',
+      [customer7Id]
+    );
+
+    // Verify Party Ledger:
+    const advLedger = await getCustomerLedger(customer7Id, shopId);
+    // Must NOT have a credit row for the internal store_credit payment
+    const scPayRow = advLedger.rows.find(r => r.id === scPayRes.id || (r.description && r.description.includes('store_credit')));
+    assert.strictEqual(scPayRow, undefined, 'Internal store_credit payment must NOT appear as a credit row in party ledger');
+
+    // Must have the invoice debit row
+    const saleRowAdv = advLedger.rows.find(r => r.id === advSaleId && r.entry_type === 'sale');
+    assert.ok(saleRowAdv, 'Invoice must appear in party ledger as a debit row');
+    assert.strictEqual(Number(saleRowAdv.debit), 15000.00, 'Invoice debit must be ₹15,000.00');
+
+    // Closing balance must strictly be -35,000.00 (decreased from -50,000.00)
+    assert.strictEqual(Number(advLedger.closing_balance), -35000.00, 'Ledger closing balance must lessen to -₹35,000.00 (Cr)');
+
+    // Verify getCustomerTotalOutstanding:
+    const cust7Outstanding = await getCustomerTotalOutstanding(customer7Id, shopId);
+    assert.strictEqual(Number(cust7Outstanding.total_paid), 50000.00, 'Total real payments must strictly be ₹50,000.00 without double-counting store credit');
+    assert.strictEqual(Number(cust7Outstanding.advance_balance), 35000.00, 'Advance balance must strictly be ₹35,000.00');
+    assert.strictEqual(Number(cust7Outstanding.net_balance), -35000.00, 'Net balance must strictly be -₹35,000.00');
+
+    // Invariant check
+    await assertCustomerLedgerAndBalanceReconcile(customer7Id);
+    console.log(`   [Test 14 Verified]: Initial Adv = ₹50,000, Sale = ₹15,000, Final Adv = ₹${cust7Outstanding.advance_balance}, Ledger Closing = ₹${advLedger.closing_balance}`);
+    console.log('✔ Test 14 Passed: Invoices cleanly lessen available store credit without double-counting internal adjustments.');
+
     console.log('\n================================================================');
-    console.log('   ALL 13 FIFO LEDGER & RECONCILIATION TEST GROUPS PASSED!       ');
+    console.log('   ALL 14 FIFO LEDGER & RECONCILIATION TEST GROUPS PASSED!       ');
     console.log('================================================================\n');
 
   } catch (err) {
@@ -706,6 +783,12 @@ async function runTests() {
         await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer6Id]);
         await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer6Id]);
         await runQuery('DELETE FROM customers WHERE id = ?', [customer6Id]);
+      }
+      if (customer7Id) {
+        await runQuery('DELETE FROM payment_allocations WHERE customer_id = ?', [customer7Id]);
+        await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer7Id]);
+        await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer7Id]);
+        await runQuery('DELETE FROM customers WHERE id = ?', [customer7Id]);
       }
     } catch {}
     await pool.end();

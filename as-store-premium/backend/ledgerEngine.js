@@ -25,7 +25,12 @@ function isoDate(d) {
 function toDateKey(d) {
   if (!d) return '';
   if (typeof d === 'string') return d.slice(0, 10);
-  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  if (d instanceof Date) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
   return String(d).slice(0, 10);
 }
 
@@ -263,7 +268,7 @@ async function fetchCustomerLedgerTransactions(customerId, shopId) {
 
   const salesRecords = await allRecords(
     `SELECT s.id,
-            COALESCE(s.invoice_date, s.sale_date::date, s.created_at::date) AS entry_date,
+            COALESCE(s.invoice_date::text, s.sale_date::text, s.created_at::date::text) AS entry_date,
             s.created_at,
             COALESCE(s.invoice_number, 'INV-' || LPAD(s.id::text, 6, '0')) AS ref_no,
             'sale' AS entry_type,
@@ -296,7 +301,7 @@ async function fetchCustomerLedgerTransactions(customerId, shopId) {
 
   const paymentRecords = await allRecords(
     `SELECT pm.id,
-            pm.payment_date::date AS entry_date,
+            COALESCE(pm.payment_date::text, pm.created_at::date::text) AS entry_date,
             pm.created_at,
             COALESCE(pm.payment_number, 'PAY-' || LPAD(pm.id::text, 6, '0')) AS ref_no,
             pm.amount,
@@ -305,7 +310,7 @@ async function fetchCustomerLedgerTransactions(customerId, shopId) {
             pm.unallocated_amount,
             pm.reversed_at
      FROM payments pm
-     WHERE pm.customer_id = ? AND COALESCE(pm.payment_mode, '') != 'credit_note' ${shopCondPayments}`,
+     WHERE pm.customer_id = ? AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit') ${shopCondPayments}`,
     paymentParams
   );
 
@@ -870,7 +875,7 @@ export async function getCustomerTotalOutstanding(customerId, shopId = null) {
        COALESCE((
          SELECT SUM(pm.amount) 
          FROM payments pm 
-         WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') != 'credit_note' ${shopCondPm}
+         WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit') ${shopCondPm}
        ), 0) AS total_paid_payments,
        COALESCE((
          SELECT SUM(cn.amount)

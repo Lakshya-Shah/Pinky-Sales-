@@ -663,7 +663,7 @@ const getShopsForUser = async (user) => {
         FROM payments pm 
         WHERE pm.customer_id = COALESCE(c_match.id, sh.customer_id) 
           AND pm.reversed_at IS NULL 
-          AND COALESCE(pm.payment_mode, '') != 'credit_note'
+          AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit')
       ), 0) AS warehouse_bills_paid,
       GREATEST(0, (
         COALESCE(c_match.opening_balance, 0)
@@ -678,7 +678,7 @@ const getShopsForUser = async (user) => {
             FROM payments pm2 
             WHERE pm2.customer_id = COALESCE(c_match.id, sh.customer_id) 
               AND pm2.reversed_at IS NULL 
-              AND COALESCE(pm2.payment_mode, '') != 'credit_note'
+              AND COALESCE(pm2.payment_mode, '') NOT IN ('credit_note', 'store_credit')
           ), 0)
         - COALESCE((
             SELECT SUM(cn2.amount) 
@@ -690,30 +690,23 @@ const getShopsForUser = async (user) => {
       CASE 
         WHEN sh.location_type = 'warehouse' THEN
           COALESCE((
-            SELECT SUM(customer_pending)
-            FROM (
-              SELECT
-                GREATEST(0, (
-                  GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
-                    (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
-                     WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
-                  )))
-                  + COALESCE(SUM(CASE WHEN sa.status NOT IN ('cancelled', 'void', 'draft') THEN sa.pending_amount ELSE 0 END), 0)
-                  - COALESCE(c.advance_balance, 0)
-                )) AS customer_pending
-              FROM customers c
-              LEFT JOIN sales sa ON sa.customer_id = c.id AND sa.shop_id = sh.id
-              WHERE c.shop_id = sh.id
-              GROUP BY c.id, c.opening_balance, c.advance_balance
-            ) c_dues
-            WHERE customer_pending > 0
+            SELECT SUM(
+              GREATEST(0, (
+                COALESCE(c.opening_balance, 0)
+                + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void') AND s2.shop_id = sh.id), 0)
+                - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = c.id AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') NOT IN ('credit_note', 'store_credit') AND pm2.shop_id = sh.id), 0)
+                - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = c.id AND cn2.status != 'cancelled' AND cn2.shop_id = sh.id), 0)
+              ))
+            )
+            FROM customers c
+            WHERE c.shop_id = sh.id
           ), 0)
         ELSE
           GREATEST(
             GREATEST(0, (
               COALESCE(c_match.opening_balance, 0)
               + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = COALESCE(c_match.id, sh.customer_id) AND s2.status NOT IN ('cancelled', 'void')), 0)
-              - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = COALESCE(c_match.id, sh.customer_id) AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') != 'credit_note'), 0)
+              - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = COALESCE(c_match.id, sh.customer_id) AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
               - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = COALESCE(c_match.id, sh.customer_id) AND cn2.status != 'cancelled'), 0)
             )),
             (COALESCE((SELECT SUM(sa.pending_amount) FROM sales sa WHERE sa.shop_id = sh.id AND sa.status NOT IN ('cancelled', 'void')), 0) + COALESCE((SELECT SUM(c.opening_balance) FROM customers c WHERE c.shop_id = sh.id), 0))
@@ -1003,6 +996,10 @@ app.get('/api/dashboard', authenticateToken, requireShopStaff, async (req, res) 
   const visibleBatchAccess = batchAccessSql(req.user);
   const visibleBatchShopScope = shopId ? `AND ib.shop_id = ${Number(shopId)}` : '';
   const visibleStockSql = `COALESCE((SELECT SUM(ib.quantity_remaining) FROM inventory_batches ib WHERE ib.shop_id = st.shop_id AND ib.product_id = st.product_id ${visibleBatchAccess}), 0)`;
+  const customerShopScope = shopId ? `WHERE c.shop_id = ${Number(shopId)}` : '';
+  const salesShopScope = shopId ? `AND s2.shop_id = ${Number(shopId)}` : '';
+  const paymentShopScope = shopId ? `AND pm.shop_id = ${Number(shopId)}` : '';
+  const creditNoteShopScope = shopId ? `AND cn.shop_id = ${Number(shopId)}` : '';
 
   const todayDate = today();
   const monthStart = todayDate.slice(0, 7) + '-01';
@@ -1023,25 +1020,18 @@ app.get('/api/dashboard', authenticateToken, requireShopStaff, async (req, res) 
         (SELECT COALESCE(SUM(total_amount), 0) FROM sales sa ${shopId ? 'WHERE sa.shop_id = ? AND' : 'WHERE'} sa.status NOT IN ('cancelled', 'void')) AS all_time_sales,
         (SELECT COUNT(*) FROM sales sa ${shopId ? 'WHERE sa.shop_id = ? AND' : 'WHERE'} sa.status NOT IN ('cancelled', 'void')) AS all_time_orders,
         COALESCE((
-          SELECT SUM(customer_pending)
-          FROM (
-            SELECT
-              GREATEST(0, (
-                GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
-                  (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
-                   WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
-                )))
-                + COALESCE(SUM(CASE WHEN sa.status NOT IN ('cancelled', 'void', 'draft') THEN sa.pending_amount ELSE 0 END), 0)
-                - COALESCE(c.advance_balance, 0)
-              )) AS customer_pending
-            FROM customers c
-            LEFT JOIN sales sa ON sa.customer_id = c.id ${shopId ? 'AND sa.shop_id = ?' : ''}
-            ${shopId ? 'WHERE c.shop_id = ?' : ''}
-            GROUP BY c.id, c.opening_balance, c.advance_balance
-          ) cust_dues
-          WHERE customer_pending > 0
+          SELECT SUM(
+            GREATEST(0, (
+              COALESCE(c.opening_balance, 0)
+              + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void') ${salesShopScope}), 0)
+              - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit') ${paymentShopScope}), 0)
+              - COALESCE((SELECT SUM(cn.amount) FROM credit_notes cn WHERE cn.customer_id = c.id AND cn.status != 'cancelled' ${creditNoteShopScope}), 0)
+            ))
+          )
+          FROM customers c
+          ${customerShopScope}
         ), 0) AS pending_payments
-    `, shopId ? [shopId, shopId, todayDate, shopId, todayDate, shopId, monthStart, shopId, monthStart, shopId, shopId, shopId, shopId] : [todayDate, todayDate, monthStart, monthStart]),
+    `, shopId ? [shopId, shopId, todayDate, shopId, todayDate, shopId, monthStart, shopId, monthStart, shopId, shopId] : [todayDate, todayDate, monthStart, monthStart]),
         allRecords(`
       SELECT st.id, sh.name AS shop_name, p.id AS product_id, p.name AS product_name, p.short_name AS product_short_name, p.brand,
         ${visibleStockSql} AS quantity, sh.low_stock_threshold
@@ -1057,42 +1047,28 @@ app.get('/api/dashboard', authenticateToken, requireShopStaff, async (req, res) 
         COALESCE((SELECT SUM(ib.quantity_remaining) FROM inventory_batches ib WHERE ib.shop_id = sh.id ${visibleBatchAccess}), 0) AS stock,
         ${isSuper
           ? `COALESCE((
-              SELECT SUM(customer_pending)
-              FROM (
-                SELECT
-                  GREATEST(0, (
-                    GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
-                      (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
-                       WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
-                    )))
-                    + COALESCE(SUM(CASE WHEN sa.status NOT IN ('cancelled', 'void', 'draft') THEN sa.pending_amount ELSE 0 END), 0)
-                    - COALESCE(c.advance_balance, 0)
-                  )) AS customer_pending
-                FROM customers c
-                LEFT JOIN sales sa ON sa.customer_id = c.id AND sa.shop_id = sh.id
-                WHERE c.shop_id = sh.id
-                GROUP BY c.id, c.opening_balance, c.advance_balance
-              ) c_dues
-              WHERE customer_pending > 0
+              SELECT SUM(
+                GREATEST(0, (
+                  COALESCE(c.opening_balance, 0)
+                  + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void') AND s2.shop_id = sh.id), 0)
+                  - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit') AND pm.shop_id = sh.id), 0)
+                  - COALESCE((SELECT SUM(cn.amount) FROM credit_notes cn WHERE cn.customer_id = c.id AND cn.status != 'cancelled' AND cn.shop_id = sh.id), 0)
+                ))
+              )
+              FROM customers c
+              WHERE c.shop_id = sh.id
             ), 0)`
           : `CASE WHEN sh.id = ? THEN COALESCE((
-              SELECT SUM(customer_pending)
-              FROM (
-                SELECT
-                  GREATEST(0, (
-                    GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
-                      (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
-                       WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
-                    )))
-                    + COALESCE(SUM(CASE WHEN sa.status NOT IN ('cancelled', 'void', 'draft') THEN sa.pending_amount ELSE 0 END), 0)
-                    - COALESCE(c.advance_balance, 0)
-                  )) AS customer_pending
-                FROM customers c
-                LEFT JOIN sales sa ON sa.customer_id = c.id AND sa.shop_id = sh.id
-                WHERE c.shop_id = sh.id
-                GROUP BY c.id, c.opening_balance, c.advance_balance
-              ) c_dues
-              WHERE customer_pending > 0
+              SELECT SUM(
+                GREATEST(0, (
+                  COALESCE(c.opening_balance, 0)
+                  + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void') AND s2.shop_id = sh.id), 0)
+                  - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit') AND pm.shop_id = sh.id), 0)
+                  - COALESCE((SELECT SUM(cn.amount) FROM credit_notes cn WHERE cn.customer_id = c.id AND cn.status != 'cancelled' AND cn.shop_id = sh.id), 0)
+                ))
+              )
+              FROM customers c
+              WHERE c.shop_id = sh.id
             ), 0) ELSE 0 END`
         } AS pending,
         COALESCE((SELECT SUM(sa.total_amount) FROM sales sa WHERE sa.shop_id = sh.id AND ${dateExpr} = ?::date AND sa.status NOT IN ('cancelled', 'void')), 0) AS sales_today
@@ -4046,8 +4022,8 @@ app.get('/api/customers', authenticateToken, requireShopStaff, async (req, res) 
   }
   const netBalanceSql = `(
     COALESCE(c.opening_balance, 0)
-    + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id), 0)
-    - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') != 'credit_note'), 0)
+    + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void')), 0)
+    - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
     - COALESCE((SELECT SUM(cn.amount) FROM credit_notes cn WHERE cn.customer_id = c.id AND cn.status != 'cancelled'), 0)
   )`;
   const pendingSql = `GREATEST(0, ${netBalanceSql})`;
@@ -4070,8 +4046,8 @@ app.get('/api/customers', authenticateToken, requireShopStaff, async (req, res) 
            ${pendingSql} AS pending_amount,
            ${advanceSql} AS advance_balance,
            ${netBalanceSql} AS current_balance,
-           (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id) AS purchases_count,
-           (SELECT COALESCE(SUM(COALESCE(NULLIF(s.current_invoice_total, 0), s.total_amount)), 0) FROM sales s WHERE s.customer_id = c.id) AS total_purchases_amount
+           (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')) AS purchases_count,
+           (SELECT COALESCE(SUM(COALESCE(NULLIF(s.current_invoice_total, 0), s.total_amount)), 0) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')) AS total_purchases_amount
     ${baseSql}
     ORDER BY c.created_at DESC
   `,
@@ -4877,7 +4853,7 @@ app.get(['/api/sales/customers', '/sales/customers'], authenticateToken, require
           GREATEST(0, (
             COALESCE(c.opening_balance, 0)
             + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id), 0)
-            - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = c.id AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') != 'credit_note'), 0)
+            - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = c.id AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
             - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = c.id AND cn2.status != 'cancelled'), 0)
           )) AS total_pending,
           MAX(COALESCE(sa.invoice_date::TEXT, sa.sale_date::TEXT)) AS last_purchase_date
@@ -5035,7 +5011,7 @@ app.get('/api/fix-customer-21', async (req, res) => {
       SET current_balance = (
         COALESCE(c.opening_balance, 0)
         + COALESCE((SELECT SUM(COALESCE(NULLIF(s.current_invoice_total, 0), s.total_amount)) FROM sales s WHERE s.customer_id = c.id), 0)
-        - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') != 'credit_note'), 0)
+        - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
         - COALESCE((SELECT SUM(cn.amount) FROM credit_notes cn WHERE cn.customer_id = c.id AND cn.status != 'cancelled'), 0)
       )
       WHERE c.id = 21
@@ -5969,9 +5945,12 @@ app.post('/api/sales', authenticateToken, requireShopStaff, async (req, res) => 
       const newAdvanceBal = closingBalance < 0 
         ? Math.abs(closingBalance) 
         : (previousBalance < 0 ? 0 : Math.max(0, money(Number(customer.advance_balance || 0) - totalAdvanceApplied)));
+      const effectiveClosingBal = newAdvanceBal > 0 && closingBalance >= 0
+        ? -newAdvanceBal
+        : closingBalance;
       await tx.runQuery(
         'UPDATE customers SET current_balance = ?, advance_balance = ? WHERE id = ?',
-        [closingBalance, newAdvanceBal, customer_id]
+        [effectiveClosingBal, newAdvanceBal, customer_id]
       );
 
       // Portion of direct paid amount covering this sale
@@ -7341,7 +7320,7 @@ app.get('/api/pending-payments', authenticateToken, requireShopStaff, async (req
   const netBalanceSql = `(
     COALESCE(c.opening_balance, 0)
     + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void')), 0)
-    - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = c.id AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') != 'credit_note'), 0)
+    - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = c.id AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
     - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = c.id AND cn2.status != 'cancelled'), 0)
   )`;
   const groupOrderSql = "sa.due_date ASC NULLS LAST, sa.id ASC";
@@ -8211,23 +8190,16 @@ app.get('/api/reports', authenticateToken, requireShopStaff, async (req, res) =>
   const pendingByShop = await allRecords(`
     SELECT sh.id AS shop_id, sh.name AS shop_name, sh.area AS shop_area, sh.location_type,
       COALESCE((
-        SELECT SUM(customer_pending)
-        FROM (
-          SELECT
-            GREATEST(0, (
-              GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
-                (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
-                 WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
-              )))
-              + COALESCE(SUM(CASE WHEN sa.status NOT IN ('cancelled', 'void', 'draft') THEN sa.pending_amount ELSE 0 END), 0)
-              - COALESCE(c.advance_balance, 0)
-            )) AS customer_pending
-          FROM customers c
-          LEFT JOIN sales sa ON sa.customer_id = c.id AND sa.shop_id = sh.id
-          WHERE c.shop_id = sh.id
-          GROUP BY c.id, c.opening_balance, c.advance_balance
-        ) c_dues
-        WHERE customer_pending > 0
+        SELECT SUM(
+          GREATEST(0, (
+            COALESCE(c.opening_balance, 0)
+            + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void') AND s2.shop_id = sh.id), 0)
+            - COALESCE((SELECT SUM(pm2.amount) FROM payments pm2 WHERE pm2.customer_id = c.id AND pm2.reversed_at IS NULL AND COALESCE(pm2.payment_mode, '') NOT IN ('credit_note', 'store_credit') AND pm2.shop_id = sh.id), 0)
+            - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = c.id AND cn2.status != 'cancelled' AND cn2.shop_id = sh.id), 0)
+          ))
+        )
+        FROM customers c
+        WHERE c.shop_id = sh.id
       ), 0) AS pending
     FROM shops sh
     WHERE sh.status = 'active'
