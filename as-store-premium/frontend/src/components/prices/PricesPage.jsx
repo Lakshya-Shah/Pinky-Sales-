@@ -469,57 +469,57 @@ export default function PricesPage({
     });
   }, [baseConsolidatedItems, selectedCategory, availableCategories, search]);
 
-  // Determine if this view uses server-side pagination:
-  // Server-paged ONLY on general Prices page without category filter and with loaded external pager
-  const isServerPaged = !categoryType && !selectedCategory && Boolean(pager?.loaded) && typeof onPageChange === 'function';
+  // Pagination state for Prices page and category pages (tools, spares, battery, oca-glass, etc.)
+  const [currentPage, setCurrentPage] = useState(() => Number(pager?.page) || 1);
+  const [pageSize, setPageSize] = useState(() => Number(pager?.limit) || 50);
 
-  // Client-side pagination state for category pages (tools, spares, battery, oca-glass) & filtered views
-  const [clientPage, setClientPage] = useState(1);
-  const [clientPageSize, setClientPageSize] = useState(() => Number(pager?.limit) || 50);
-
-  // Reset client page to 1 when search query, selected category filter, or categoryType changes
+  // Sync with external pager when pager props change from parent
   useEffect(() => {
-    setClientPage(1);
+    if (pager?.page) {
+      setCurrentPage(Number(pager.page));
+    }
+  }, [pager?.page]);
+
+  useEffect(() => {
+    if (pager?.limit) {
+      setPageSize(Number(pager.limit));
+    }
+  }, [pager?.limit]);
+
+  // Reset page to 1 when search query, selected category filter, or categoryType changes
+  useEffect(() => {
+    setCurrentPage(1);
   }, [search, selectedCategory, categoryType]);
 
-  const clientTotalPages = Math.max(1, Math.ceil(consolidatedItems.length / clientPageSize));
+  const totalItemsCount = consolidatedItems.length;
+  const totalPagesCount = Math.max(1, Math.ceil(totalItemsCount / pageSize));
 
-  useEffect(() => {
-    if (clientPage > clientTotalPages && clientTotalPages > 0) {
-      setClientPage(1);
-    }
-  }, [clientTotalPages, clientPage]);
+  // Ensure current active page never exceeds total pages
+  const activePage = Math.min(Math.max(1, currentPage), totalPagesCount);
+  const activePageSize = pageSize;
 
-  // Active page metadata
-  const activePage = isServerPaged ? Number(pager?.page || 1) : clientPage;
-  const activePageSize = isServerPaged ? Number(pager?.limit || 50) : clientPageSize;
-  const totalItemsCount = isServerPaged ? Number(pager?.total || consolidatedItems.length) : consolidatedItems.length;
-  const totalPagesCount = isServerPaged ? Math.max(1, Number(pager?.totalPages || 1)) : clientTotalPages;
-
-  // Paginated list of products to render in the table
+  // Paginated list of products to render in the table:
+  // Slices consolidatedItems so only the selected number of rows (e.g. 25, 50, 100) are displayed per page
   const displayedItems = useMemo(() => {
-    if (isServerPaged) {
-      return consolidatedItems;
-    }
-    const startIndex = (clientPage - 1) * clientPageSize;
-    return consolidatedItems.slice(startIndex, startIndex + clientPageSize);
-  }, [isServerPaged, consolidatedItems, clientPage, clientPageSize]);
+    const startIndex = (activePage - 1) * activePageSize;
+    return consolidatedItems.slice(startIndex, startIndex + activePageSize);
+  }, [consolidatedItems, activePage, activePageSize]);
 
   const handlePageChange = (newPage) => {
-    if (isServerPaged) {
-      onPageChange(newPage);
-    } else {
-      setClientPage(newPage);
+    const targetPage = Math.max(1, Number(newPage) || 1);
+    setCurrentPage(targetPage);
+    if (typeof onPageChange === 'function') {
+      onPageChange(targetPage);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handlePageSizeChange = (newLimit) => {
-    if (isServerPaged) {
-      onPageSizeChange(newLimit);
-    } else {
-      setClientPageSize(newLimit);
-      setClientPage(1);
+    const targetLimit = Math.max(1, Number(newLimit) || 50);
+    setPageSize(targetLimit);
+    setCurrentPage(1);
+    if (typeof onPageSizeChange === 'function') {
+      onPageSizeChange(targetLimit);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -946,7 +946,7 @@ export default function PricesPage({
 
       {/* Main Stock & Price Table View */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
-        {loading ? (
+        {loading && consolidatedItems.length === 0 ? (
           <div className="p-12 text-center text-slate-400 font-semibold text-xs animate-pulse">
             Loading consolidated product catalog...
           </div>
