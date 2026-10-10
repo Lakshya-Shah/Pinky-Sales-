@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -15,14 +16,14 @@ const rawConnectionString =
   process.env.STORAGE_PRISMA_URL ||
   process.env.SUPABASE_POSTGRES_URL ||
   process.env.SUPABASE_URL ||
-  'postgres://postgres.hnntlrycgywhstbqqmfo:J3H14Vo7XVbdXPNx@aws-0-us-east-1.pooler.supabase.com:5432/postgres';
+  'postgres://postgres.hnntlrycgywhstbqqmfo:J3H14Vo7XVbdXPNx@aws-0-us-east-1.pooler.supabase.com:6543/postgres';
 
 let connectionString = rawConnectionString ? rawConnectionString.replace(/([?&])sslmode=[^&]*(&?)/gi, '$1').replace(/\?$/, '') : '';
 if (connectionString.includes('pooler.supabase.com:5432')) {
   connectionString = connectionString.replace('pooler.supabase.com:5432', 'pooler.supabase.com:6543');
 }
 
-const pool = new Pool({
+export const migrationPool = new Pool({
   connectionString,
   ssl: { rejectUnauthorized: false },
   max: 1,
@@ -30,12 +31,12 @@ const pool = new Pool({
   query_timeout: 30_000,
 });
 
-try {
+export async function runMigrations() {
   const files = (await readdir(new URL('./migrations/', import.meta.url)))
     .filter((file) => file.endsWith('.sql'))
     .sort();
 
-  await pool.query(`
+  await migrationPool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       name TEXT PRIMARY KEY,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -43,10 +44,10 @@ try {
   `);
 
   for (const file of files) {
-    const applied = await pool.query('SELECT 1 FROM schema_migrations WHERE name = $1', [file]);
+    const applied = await migrationPool.query('SELECT 1 FROM schema_migrations WHERE name = $1', [file]);
     if (applied.rowCount) continue;
     const sql = await readFile(new URL(`./migrations/${file}`, import.meta.url), 'utf8');
-    const client = await pool.connect();
+    const client = await migrationPool.connect();
     try {
       await client.query('BEGIN');
       await client.query(sql);
@@ -56,11 +57,19 @@ try {
     } catch (error) {
       await client.query('ROLLBACK');
       console.warn(`[Migration] Warning on ${file}: ${error.message}`);
-      await pool.query('INSERT INTO schema_migrations (name) VALUES ($1) ON CONFLICT DO NOTHING', [file]);
+      await migrationPool.query('INSERT INTO schema_migrations (name) VALUES ($1) ON CONFLICT DO NOTHING', [file]);
     } finally {
       client.release();
     }
   }
-} finally {
-  await pool.end();
+}
+
+// If executed directly as script, run and close pool
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isDirectRun) {
+  try {
+    await runMigrations();
+  } finally {
+    await migrationPool.end();
+  }
 }

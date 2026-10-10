@@ -4,15 +4,7 @@
 
 BEGIN;
 
--- 1. Reconcile Customer 15 (JAGDISHBHAI) specifically:
--- Customer had ₹6,99,990.00 Cr advance prior to Invoice #INV-000658 (₹14,800.00).
--- After applying ₹14,800.00 to the invoice, available advance must lessen to ₹6,85,190.00 Cr.
-UPDATE customers 
-SET current_balance = -685190.00,
-    advance_balance = 685190.00
-WHERE id = 15;
-
--- 2. Resynchronize all customer balances where internal store_credit or advance adjustments
+-- 1. Resynchronize all customer balances where internal store_credit or advance adjustments
 -- caused divergence between physical table balances and mathematical ledger truth.
 -- Invariant: Opening balance is immutable. Real payments exclude credit_note and store_credit.
 WITH customer_calc AS (

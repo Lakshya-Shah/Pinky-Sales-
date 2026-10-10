@@ -9,6 +9,7 @@ import { initDatabase, runQuery, getRecord, allRecords, runTransaction, executeT
 import { uploadImageToR2, deleteImageFromR2, isR2Configured, getImageBufferFromStorage } from './r2Storage.js';
 import { postSaleJournal, postPaymentJournal, postCreditNoteJournal, postPurchaseBillJournal, postDebitNoteJournal, reverseJournal } from './accountingEngine.js';
 import { getCustomerLedger, getVendorLedger, getARAgingReport, getAPAgingReport, getCustomerTotalOutstanding } from './ledgerEngine.js';
+import { runMigrations } from './migrate.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -10004,8 +10005,14 @@ app.use((error, req, res, next) => {
 });
 
 if (process.env.VERCEL !== '1') {
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, '0.0.0.0', async () => {
     console.log(`[Server] Multi-shop API is live on http://localhost:${PORT}`);
+    try {
+      await runMigrations();
+      console.log('[Server] Database migrations checked and up-to-date.');
+    } catch (migErr) {
+      console.warn('[Server] Migration check notice:', migErr?.message || migErr);
+    }
   });
 }
 

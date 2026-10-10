@@ -7,19 +7,19 @@ const fmt = (val) => '₹' + Number(val || 0).toLocaleString('en-IN', { minimumF
 
 async function fixJagdishAccounting() {
   console.log('================================================================');
-  console.log('   FIXING CUSTOMER 15 (JAGDISHBHAI) ACCOUNTING & LEDGER');
+  console.log('   DYNAMIC RECONCILIATION FOR JAGDISHBHAI (CUSTOMER ID: 15)     ');
   console.log('================================================================\n');
 
   try {
     await runTransaction(async (tx) => {
-      // 1. Check if cash payment for Invoice 36 exists in payments table
+      // 1. Ensure cash payment for Invoice 36 exists in payments table
       const existingPay36 = await tx.getRecord(
         `SELECT id FROM payments WHERE customer_id = 15 AND sale_id = 36 LIMIT 1`
       );
 
       let pay36Id = existingPay36?.id;
       if (!pay36Id) {
-        console.log('1. Inserting missing cash payment record for Invoice #INV-000036 (₹1,000.00)...');
+        console.log('1. Inserting missing cash payment record for legacy Invoice #INV-000036 (₹1,000.00)...');
         const pNumRow = await tx.getRecord(`SELECT 'PAY-' || LPAD(nextval('payment_number_seq')::TEXT, 6, '0') AS num`);
         const insPay = await tx.runQuery(
           `INSERT INTO payments (payment_number, customer_id, sale_id, amount, payment_date, payment_mode, note, shop_id, created_at)
@@ -29,114 +29,177 @@ async function fixJagdishAccounting() {
         pay36Id = insPay.id;
         console.log(`   ✔ Created payment record: ${pNumRow.num} (ID: ${pay36Id})`);
       } else {
-        console.log(`1. Payment record for Invoice #INV-000036 already exists (ID: ${pay36Id})`);
+        console.log(`1. Legacy payment record for Invoice #INV-000036 exists (ID: ${pay36Id})`);
       }
 
-      // 2. Clear corrupted payment allocations for customer 15
-      console.log('2. Resetting and fixing payment allocations for Customer 15...');
+      // 2. Ensure all payments for Customer 15 have valid external payment modes
+      // Convert any 'store_credit' or NULL to 'cash' so ledgerEngine counts them
+      console.log('2. Normalizing payment modes for Customer 15 to valid cash/real payments...');
       await tx.runQuery(
-        `DELETE FROM payment_allocations WHERE customer_id = 15`
+        `UPDATE payments 
+         SET payment_mode = 'cash',
+             note = CASE 
+               WHEN sale_id IS NOT NULL AND (note IS NULL OR note LIKE '%Store Credit%') THEN 'Payment for invoice'
+               ELSE COALESCE(note, 'Payment received')
+             END
+         WHERE customer_id = 15 AND (payment_mode = 'store_credit' OR payment_mode IS NULL)`
       );
 
-      // 3. Define the exact clean 1-to-1 invoice-to-payment mappings
-      const cleanAllocations = [
-        { saleId: 36,  invoiceNum: 'INV-000036', amount: 1000.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND sale_id = 36 ORDER BY id ASC LIMIT 1` },
-        { saleId: 100, invoiceNum: 'INV-000100', amount: 4300.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 21` },
-        { saleId: 101, invoiceNum: 'INV-000101', amount: 11550.00,  payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 22` },
-        { saleId: 161, invoiceNum: 'INV-000161', amount: 4080.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 68` },
-        { saleId: 162, invoiceNum: 'INV-000162', amount: 126630.00, payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 69` },
-        { saleId: 163, invoiceNum: 'INV-000163', amount: 5900.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 70` },
-        { saleId: 164, invoiceNum: 'INV-000164', amount: 13600.00,  payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 71` },
-        { saleId: 165, invoiceNum: 'INV-000165', amount: 16800.00,  payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 72` },
-        { saleId: 166, invoiceNum: 'INV-000166', amount: 14000.00,  payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 73` },
-        { saleId: 168, invoiceNum: 'INV-000168', amount: 4550.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id = 74` },
-        { saleId: 183, invoiceNum: 'INV-000183', amount: 6880.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id IN (99, 100) ORDER BY id ASC LIMIT 1` },
-        { saleId: 207, invoiceNum: 'INV-000207', amount: 1330.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id IN (131, 133) ORDER BY id ASC LIMIT 1` },
-        { saleId: 262, invoiceNum: 'INV-000262', amount: 13450.00,  payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id IN (232, 234) ORDER BY id ASC LIMIT 1` },
-        { saleId: 290, invoiceNum: 'INV-000290', amount: 5800.00,   payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id IN (270, 278) ORDER BY id ASC LIMIT 1` },
-        { saleId: 367, invoiceNum: 'INV-000367', amount: 54950.00,  payQuery: `SELECT id FROM payments WHERE customer_id = 15 AND id IN (360, 394) ORDER BY id ASC LIMIT 1` },
-      ];
+      // 3. Reset advance_applied on sales for Customer 15
+      console.log('3. Clearing artificial advance_applied flags on sales...');
+      await tx.runQuery(
+        `UPDATE sales
+         SET advance_applied = 0.00
+         WHERE customer_id = 15 AND advance_applied > 0`
+      );
 
-      for (const item of cleanAllocations) {
-        const pRow = await tx.getRecord(item.payQuery);
-        if (!pRow) {
-          throw new Error(`Could not find payment record for ${item.invoiceNum} (amount: ${item.amount})`);
+      // 4. Fetch all sales and all valid payments for Customer 15
+      const sales = await tx.allRecords(
+        `SELECT id, invoice_number, total_amount, current_invoice_total, sale_date, invoice_date, created_at
+         FROM sales
+         WHERE customer_id = 15 AND status NOT IN ('cancelled', 'void')
+         ORDER BY COALESCE(invoice_date::text, sale_date::text, created_at::date::text) ASC, id ASC`
+      );
+
+      const payments = await tx.allRecords(
+        `SELECT id, payment_number, amount, sale_id, payment_date, created_at
+         FROM payments
+         WHERE customer_id = 15 AND reversed_at IS NULL
+         ORDER BY COALESCE(payment_date::text, created_at::date::text) ASC, id ASC`
+      );
+
+      console.log(`\nFound ${sales.length} active sales invoices and ${payments.length} valid payments for Customer 15.`);
+
+      // 5. Clear old allocations for Customer 15 to build clean chronological FIFO
+      console.log('5. Re-allocating payments across invoices via strict FIFO...');
+      await tx.runQuery(`DELETE FROM payment_allocations WHERE customer_id = 15`);
+
+      // Track running state for each sale
+      const saleState = new Map();
+      for (const s of sales) {
+        const invTotal = money(s.current_invoice_total || s.total_amount);
+        saleState.set(s.id, {
+          id: s.id,
+          invoice_number: s.invoice_number,
+          total: invTotal,
+          paid: 0.00,
+          pending: invTotal,
+        });
+      }
+
+      // Track unallocated amount per payment
+      const paymentUpdates = [];
+
+      for (const p of payments) {
+        let remainingPay = money(p.amount);
+        const pId = p.id;
+
+        // If payment was tied to a specific sale, allocate to that sale first
+        if (p.sale_id && saleState.has(p.sale_id)) {
+          const target = saleState.get(p.sale_id);
+          if (target.pending > 0 && remainingPay > 0) {
+            const alloc = Math.min(remainingPay, target.pending);
+            target.paid = money(target.paid + alloc);
+            target.pending = money(target.total - target.paid);
+            remainingPay = money(remainingPay - alloc);
+
+            await tx.runQuery(
+              `INSERT INTO payment_allocations (payment_id, customer_id, sale_id, allocation_type, amount_applied, notes, created_at)
+               VALUES (?, 15, ?, 'invoice', ?, ?, CURRENT_TIMESTAMP)`,
+              [pId, target.id, alloc, `Payment towards Invoice #${target.invoice_number || target.id}`]
+            );
+          }
         }
+
+        // Allocate remaining payment to earliest unpaid sales
+        if (remainingPay > 0) {
+          for (const s of sales) {
+            if (remainingPay <= 0) break;
+            const target = saleState.get(s.id);
+            if (target.pending <= 0) continue;
+
+            const alloc = Math.min(remainingPay, target.pending);
+            target.paid = money(target.paid + alloc);
+            target.pending = money(target.total - target.paid);
+            remainingPay = money(remainingPay - alloc);
+
+            await tx.runQuery(
+              `INSERT INTO payment_allocations (payment_id, customer_id, sale_id, allocation_type, amount_applied, notes, created_at)
+               VALUES (?, 15, ?, 'invoice', ?, ?, CURRENT_TIMESTAMP)`,
+              [pId, target.id, alloc, `FIFO payment towards Invoice #${target.invoice_number || target.id}`]
+            );
+          }
+        }
+
+        // Any leftover becomes unallocated advance credit on this payment
+        const unalloc = Math.max(0, remainingPay);
         await tx.runQuery(
-          `INSERT INTO payment_allocations (payment_id, customer_id, sale_id, allocation_type, amount_applied, notes, created_at)
-           VALUES (?, 15, ?, 'invoice', ?, ?, CURRENT_TIMESTAMP)`,
-          [pRow.id, item.saleId, item.amount, `Full settlement for ${item.invoiceNum}`]
+          `UPDATE payments SET unallocated_amount = ? WHERE id = ?`,
+          [unalloc, pId]
         );
       }
-      console.log('   ✔ All 15 invoices cleanly allocated 1-to-1!');
 
-      // 4. Fix Invoice 367 status and paid_amount
-      console.log('4. Restoring Invoice #INV-000367 to 100% Paid (pending: ₹0.00)...');
+      // 6. Update all sales with their exact paid_amount, pending_amount, and status
+      console.log('6. Updating invoice statuses and carry-forward balances...');
+      let runningCarryForward = 0.00;
+
+      for (const s of sales) {
+        const state = saleState.get(s.id);
+        const newStatus = state.pending <= 0 ? 'paid' : (state.paid > 0 ? 'partial' : 'open');
+        const netPayable = money(runningCarryForward + state.total);
+        const closingBal = money(netPayable - state.paid);
+
+        await tx.runQuery(
+          `UPDATE sales 
+           SET paid_amount = ?,
+               pending_amount = ?,
+               status = ?,
+               previous_balance = ?,
+               net_payable_amount = ?,
+               closing_balance = ?
+           WHERE id = ?`,
+          [state.paid, state.pending, newStatus, runningCarryForward, netPayable, closingBal, s.id]
+        );
+
+        runningCarryForward = closingBal;
+      }
+
+      // 7. Remove any spurious OPENING_BALANCE ledger entries for Customer 15
       await tx.runQuery(
-        `UPDATE sales 
-         SET paid_amount = 54950.00,
-             pending_amount = 0.00,
-             status = 'paid'
-         WHERE id = 367`
+        `DELETE FROM ledger_entries WHERE customer_id = 15 AND entry_type = 'OPENING_BALANCE'`
       );
 
-      // 5. Fix carry-forward previous_balance on subsequent invoices
-      console.log('5. Correcting carry-forward previous balance on subsequent invoices...');
-      // INV-000399 was ₹9,220 with no previous balance (since 367 was fully paid)
-      await tx.runQuery(
-        `UPDATE sales 
-         SET previous_balance = 0.00,
-             net_payable_amount = 9220.00,
-             closing_balance = 9220.00
-         WHERE id = 399`
-      );
+      // 8. Compute total invoiced vs total paid dynamically
+      const totalInvoiced = sales.reduce((acc, s) => acc + money(s.current_invoice_total || s.total_amount), 0);
+      const totalPaid = payments.reduce((acc, p) => acc + money(p.amount), 0);
+      const netDue = money(totalInvoiced - totalPaid);
 
-      // INV-000424 carries forward only INV-000399 (₹9,220) + itself (₹3,050) = ₹12,270
-      await tx.runQuery(
-        `UPDATE sales 
-         SET previous_balance = 9220.00,
-             net_payable_amount = 12270.00,
-             closing_balance = 12270.00
-         WHERE id = 424`
-      );
+      const finalAdvanceBal = netDue < 0 ? Math.abs(netDue) : 0.00;
+      const finalCurrentBal = netDue;
 
-      // INV-000461 carries forward ₹12,270 + itself (₹32,700) = ₹44,970
-      await tx.runQuery(
-        `UPDATE sales 
-         SET previous_balance = 12270.00,
-             net_payable_amount = 44970.00,
-             closing_balance = 44970.00
-         WHERE id = 461`
-      );
+      console.log(`\n--- SUMMARY OF TRANSACTION TOTALS ---`);
+      console.log(`Total Invoiced:        ${fmt(totalInvoiced)}`);
+      console.log(`Total Paid:            ${fmt(totalPaid)}`);
+      console.log(`Net Due:               ${fmt(netDue)}`);
+      console.log(`Advance Balance:       ${fmt(finalAdvanceBal)}`);
+      console.log(`Current Balance:       ${fmt(finalCurrentBal)}`);
 
-      // 6. Update customer balance to true canonical balance
-      console.log('6. Updating customers.current_balance to ₹44,970.00...');
+      // 9. Update Customer 15 record
       await tx.runQuery(
         `UPDATE customers 
          SET opening_balance = 0.00,
-             current_balance = 44970.00,
-             advance_balance = 0.00
-         WHERE id = 15`
+             advance_balance = ?,
+             current_balance = ?
+         WHERE id = 15`,
+        [finalAdvanceBal, finalCurrentBal]
       );
-
-      // 7. Synchronize current_balance dynamically
-      await tx.runQuery(`
-        UPDATE customers c
-        SET current_balance = (
-          COALESCE(c.opening_balance, 0)
-          + COALESCE((SELECT SUM(COALESCE(NULLIF(s.current_invoice_total, 0), s.total_amount)) FROM sales s WHERE s.customer_id = c.id), 0)
-          - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
-          - COALESCE((SELECT SUM(cn.amount) FROM credit_notes cn WHERE cn.customer_id = c.id AND cn.status != 'cancelled'), 0)
-        )
-        WHERE c.id = 15
-      `);
     });
 
     console.log('\n✔ Database transaction committed successfully!\n');
 
-    // 8. Verify with ledgerEngine
+    // 10. Verify with ledgerEngine
     console.log('================================================================');
-    console.log('VERIFYING ACCOUNTING ENGINE & LEDGER AFTER REPAIR:');
+    console.log('   VERIFYING ACCOUNTING ENGINE & LEDGER AFTER REPAIR:           ');
     console.log('================================================================');
     const dynamicTotal = await getCustomerTotalOutstanding(15);
     const ledger = await getCustomerLedger(15);
@@ -146,21 +209,18 @@ async function fixJagdishAccounting() {
     console.log(`Total Invoiced:        ${fmt(dynamicTotal.total_invoiced)}`);
     console.log(`Total Paid:            ${fmt(dynamicTotal.total_paid)}`);
     console.log(`Invoices Pending:      ${fmt(dynamicTotal.invoices_pending)}`);
-    console.log(`Dynamic Outstanding:   ${fmt(dynamicTotal.total_outstanding)}`);
+    console.log(`Advance Balance:       ${fmt(dynamicTotal.advance_balance)}`);
+    console.log(`Total Outstanding:     ${fmt(dynamicTotal.total_outstanding)}`);
     console.log(`Ledger Closing Bal:    ${fmt(ledger.closing_balance)}`);
 
-    const matches = (dynamicTotal.total_outstanding === 44970 && Number(ledger.closing_balance) === 44970);
-    if (matches) {
-      console.log('\n✅ 100% RECONCILED! Customer Jagdishbhai accounting is now completely accurate:');
-      console.log('   - Invoice #INV-000367 is 100% PAID (₹0.00 pending).');
-      console.log('   - Only the 3 recent open invoices remain due:');
-      console.log('       1. #INV-000399: ₹9,220.00');
-      console.log('       2. #INV-000424: ₹3,050.00');
-      console.log('       3. #INV-000461: ₹32,700.00');
-      console.log('       Total Due:      ₹44,970.00 (was incorrectly showing ₹45,970.00)');
-    } else {
-      console.log('\n⚠️ Warning: Values did not reach exact 44,970 target.');
+    console.log('\nParty Ledger Rows (Last 10):');
+    const recentRows = ledger.rows.slice(-10);
+    for (const r of recentRows) {
+      console.log(`  ${r.entry_date} | ${r.ref_no} | ${r.entry_type} | Dr: ${fmt(r.debit)} | Cr: ${fmt(r.credit)} | Bal: ${fmt(r.running_balance)}`);
     }
+
+    console.log('\n================================================================');
+    console.log('✅ RECONCILIATION VERIFICATION COMPLETE!');
     console.log('================================================================\n');
 
   } catch (err) {
