@@ -618,15 +618,29 @@ const isOcaGlassCategory = (p) => {
   const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
   const name = String(p?.short_name || p?.name || '').toLowerCase();
   return cat.includes('oca') || 
-         cat.includes('glass') || 
-         cat.includes('touch') || 
+         cat.includes('touch plate') ||
+         (cat.includes('glass') && !cat.includes('back glass') && !cat.includes('housing')) || 
          name.includes('oca') || 
+         name.includes('touch plate') ||
+         name.includes(' tp ') ||
+         name.endsWith(' tp') ||
+         /tp\s*\(/i.test(name) ||
          (name.includes('glass') && !name.includes('back glass') && !cat.includes('display'));
 };
 
 const isDisplayCategory = (p) => {
+  if (isOcaGlassCategory(p)) return false;
   const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
-  return cat.includes('display') || cat.includes('combo') || cat.includes('folder') || cat.includes('screen') || cat.includes('lcd') || cat.includes('oled') || cat.includes('tft') || cat.includes('in-cell');
+  return cat === 'display' || 
+         cat.includes('display') || 
+         cat.includes('combo') || 
+         cat.includes('folder') || 
+         cat.includes('screen') || 
+         cat.includes('lcd') || 
+         cat.includes('oled') || 
+         cat.includes('tft') || 
+         cat.includes('incell') || 
+         cat.includes('in-cell');
 };
 
 const isOtherCategory = (p) => {

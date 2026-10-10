@@ -22,7 +22,11 @@ import {
   Camera,
   Volume2,
   Zap,
-  Layers
+  Layers,
+  Wrench,
+  Cpu,
+  Shield,
+  LayoutGrid
 } from 'lucide-react';
 import ExpandableText from '../shared/ExpandableText';
 import ProductThumbnail from '../ui/ProductThumbnail';
@@ -30,80 +34,240 @@ import Pagination from '../ui/Pagination';
 import { calculateConsolidatedProduct, consolidateProductList } from '../../utils/productConsolidation';
 import CostWithBatchHistory from './CostWithBatchHistory';
 
-const quickCategories = [
-  { id: '', label: 'All Items', icon: Boxes },
-  { id: 'Display', label: 'Displays', icon: Smartphone },
-  { id: 'Battery', label: 'Batteries', icon: BatteryCharging },
-  { id: 'Camera', label: 'Cameras', icon: Camera },
-  { id: 'Speaker', label: 'Speakers', icon: Volume2 },
-  { id: 'Charging Port', label: 'Charging Flex', icon: Zap },
-  { id: 'Housing', label: 'Housing & Glass', icon: Layers },
-];
-
-const isProductMatchingCategory = (product, catId) => {
-  if (!catId) return true;
+export const isOcaGlassProduct = (product) => {
   const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
   const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('oca') || 
+         cat.includes('touch plate') ||
+         cat === 'oca glass' ||
+         (cat.includes('glass') && !cat.includes('back glass') && !cat.includes('housing')) || 
+         name.includes('oca') || 
+         name.includes('touch plate') ||
+         name.includes(' tp ') ||
+         name.endsWith(' tp') ||
+         /tp\s*\(/i.test(name) ||
+         (name.includes('glass') && !name.includes('back glass') && !cat.includes('display'));
+};
+
+export const isBatteryProduct = (product) => {
+  if (isOcaGlassProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('battery') || 
+         cat.includes('batt') || 
+         name.includes('battery') || 
+         name.includes('batt.') || 
+         name.includes('batt ') || 
+         name.endsWith('batt') ||
+         /\bbt\b/i.test(name) ||
+         /bt\s*\(/i.test(name) ||
+         /bt\s*$/i.test(name);
+};
+
+export const isDisplayProduct = (product) => {
+  // CRITICAL: NEVER match OCA Glass, Touch Plate, or Battery as Display!
+  if (isOcaGlassProduct(product) || isBatteryProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat === 'display' || 
+         cat.includes('display') || 
+         cat.includes('combo') || 
+         cat.includes('folder') || 
+         cat.includes('screen') || 
+         cat.includes('lcd') || 
+         cat.includes('oled') || 
+         cat.includes('tft') || 
+         cat.includes('incell') || 
+         cat.includes('in-cell') || 
+         name.includes('combo') || 
+         name.includes('folder') || 
+         name.includes('display') ||
+         name.includes('incell');
+};
+
+export const isToolsProduct = (product) => {
+  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('tool') || 
+         cat.includes('blade') || 
+         cat.includes('cutter') || 
+         cat.includes('tweezer') || 
+         cat.includes('cleaning') || 
+         cat.includes('solvent') || 
+         cat.includes('machine') || 
+         cat.includes('soldering') || 
+         cat.includes('screw') || 
+         cat.includes('opening') ||
+         name.includes('screw') ||
+         name.includes('tweezer') ||
+         name.includes('opener');
+};
+
+export const isCameraProduct = (product) => {
+  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('camera') || 
+         cat.includes('cam') || 
+         name.includes('camera') || 
+         name.includes('cam ') ||
+         name.includes('cam(');
+};
+
+export const isSpeakerProduct = (product) => {
+  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('speaker') || 
+         cat.includes('ringer') || 
+         cat.includes('mic') || 
+         cat.includes('buzzer') || 
+         cat.includes('earpiece') || 
+         name.includes('speaker') || 
+         name.includes('ringer') || 
+         name.includes('buzzer');
+};
+
+export const isChargingProduct = (product) => {
+  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('charging') || 
+         cat.includes('sub board') || 
+         cat.includes('cc board') || 
+         (cat.includes('flex') && !cat.includes('display')) || 
+         name.includes('charging') || 
+         name.includes('flex') || 
+         name.includes('cc board');
+};
+
+export const isHousingProduct = (product) => {
+  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('housing') || 
+         cat.includes('body') || 
+         cat.includes('back glass') || 
+         cat.includes('middle') || 
+         cat.includes('frame') || 
+         name.includes('housing') || 
+         name.includes('back glass') || 
+         name.includes('frame');
+};
+
+export const isSparesProduct = (product) => {
+  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product) || isCameraProduct(product) || isSpeakerProduct(product) || isChargingProduct(product) || isHousingProduct(product)) return false;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  return cat.includes('spare') || 
+         cat.includes('ic') || 
+         cat.includes('sim') || 
+         cat.includes('button') || 
+         cat.includes('pcb') || 
+         cat.includes('vibrat') ||
+         cat.includes('sensor');
+};
+
+export const CATEGORY_BLUEPRINTS = [
+  {
+    id: 'Display',
+    label: 'Displays',
+    icon: Smartphone,
+    matcher: isDisplayProduct,
+    colorTheme: 'from-emerald-600 via-teal-600 to-teal-700',
+    activeGlow: 'shadow-emerald-600/30 ring-emerald-400/40',
+    iconColor: 'text-emerald-600',
+  },
+  {
+    id: 'Battery',
+    label: 'Batteries',
+    icon: BatteryCharging,
+    matcher: isBatteryProduct,
+    colorTheme: 'from-amber-500 via-orange-500 to-amber-600',
+    activeGlow: 'shadow-amber-500/30 ring-amber-400/40',
+    iconColor: 'text-amber-600',
+  },
+  {
+    id: 'OcaGlass',
+    label: 'OCA Glass & Touch',
+    icon: Layers,
+    matcher: isOcaGlassProduct,
+    colorTheme: 'from-cyan-500 via-sky-600 to-blue-600',
+    activeGlow: 'shadow-cyan-500/30 ring-cyan-400/40',
+    iconColor: 'text-cyan-600',
+  },
+  {
+    id: 'Tools',
+    label: 'Tools & Equipment',
+    icon: Wrench,
+    matcher: isToolsProduct,
+    colorTheme: 'from-purple-600 via-indigo-600 to-purple-700',
+    activeGlow: 'shadow-purple-600/30 ring-purple-400/40',
+    iconColor: 'text-purple-600',
+  },
+  {
+    id: 'Spares',
+    label: 'Spares & IC',
+    icon: Cpu,
+    matcher: isSparesProduct,
+    colorTheme: 'from-indigo-600 via-violet-600 to-indigo-700',
+    activeGlow: 'shadow-indigo-600/30 ring-indigo-400/40',
+    iconColor: 'text-indigo-600',
+  },
+  {
+    id: 'Camera',
+    label: 'Cameras',
+    icon: Camera,
+    matcher: isCameraProduct,
+    colorTheme: 'from-sky-500 via-blue-600 to-indigo-600',
+    activeGlow: 'shadow-sky-500/30 ring-sky-400/40',
+    iconColor: 'text-sky-600',
+  },
+  {
+    id: 'Speaker',
+    label: 'Speakers & Ringer',
+    icon: Volume2,
+    matcher: isSpeakerProduct,
+    colorTheme: 'from-rose-500 via-pink-600 to-rose-600',
+    activeGlow: 'shadow-rose-500/30 ring-rose-400/40',
+    iconColor: 'text-rose-600',
+  },
+  {
+    id: 'Charging Port',
+    label: 'Charging Flex',
+    icon: Zap,
+    matcher: isChargingProduct,
+    colorTheme: 'from-amber-500 via-yellow-500 to-amber-600',
+    activeGlow: 'shadow-yellow-500/30 ring-yellow-400/40',
+    iconColor: 'text-amber-500',
+  },
+  {
+    id: 'Housing',
+    label: 'Housing & Glass',
+    icon: Shield,
+    matcher: isHousingProduct,
+    colorTheme: 'from-teal-600 via-cyan-600 to-teal-700',
+    activeGlow: 'shadow-teal-600/30 ring-teal-400/40',
+    iconColor: 'text-teal-600',
+  },
+];
+
+export const isProductMatchingCategory = (product, catId) => {
+  if (!catId) return true;
+  const lower = String(catId).toLowerCase();
+  if (lower === 'display') return isDisplayProduct(product);
+  if (lower === 'battery') return isBatteryProduct(product);
+  if (lower === 'ocaglass' || lower === 'oca-glass' || lower === 'oca glass') return isOcaGlassProduct(product);
+  if (lower === 'tools' || lower === 'tool') return isToolsProduct(product);
+  if (lower === 'spares' || lower === 'spare') return isSparesProduct(product);
+  if (lower === 'camera') return isCameraProduct(product);
+  if (lower === 'speaker') return isSpeakerProduct(product);
+  if (lower === 'charging port' || lower === 'charging') return isChargingProduct(product);
+  if (lower === 'housing') return isHousingProduct(product);
   
-  if (catId === 'Battery') {
-    return cat.includes('battery') || 
-           cat.includes('batt') || 
-           name.includes('battery') || 
-           name.includes('batt.') || 
-           name.includes('batt ') || 
-           name.endsWith('batt') ||
-           /\bbt\b/i.test(name) ||
-           /bt\s*\(/i.test(name) ||
-           /bt\s*$/i.test(name);
-  }
-  if (catId === 'Display') {
-    return cat.includes('display') || 
-           cat.includes('combo') || 
-           cat.includes('screen') || 
-           cat.includes('folder') || 
-           cat.includes('touch') || 
-           cat.includes('glass') || 
-           name.includes('combo') || 
-           name.includes('folder') || 
-           name.includes('display');
-  }
-  if (catId === 'Camera') {
-    return cat.includes('camera') || 
-           cat.includes('cam') || 
-           name.includes('camera') || 
-           name.includes('cam ') ||
-           name.includes('cam(');
-  }
-  if (catId === 'Speaker') {
-    return cat.includes('speaker') || 
-           cat.includes('ringer') || 
-           cat.includes('mic') || 
-           cat.includes('buzzer') || 
-           cat.includes('earpiece') || 
-           name.includes('speaker') || 
-           name.includes('ringer') || 
-           name.includes('buzzer');
-  }
-  if (catId === 'Charging Port') {
-    return cat.includes('charging') || 
-           cat.includes('flex') || 
-           cat.includes('sub board') || 
-           cat.includes('cc board') || 
-           name.includes('charging') || 
-           name.includes('flex') || 
-           name.includes('cc board');
-  }
-  if (catId === 'Housing') {
-    return cat.includes('housing') || 
-           cat.includes('body') || 
-           cat.includes('back glass') || 
-           cat.includes('middle') || 
-           cat.includes('frame') || 
-           name.includes('housing') || 
-           name.includes('back glass') || 
-           name.includes('frame');
-  }
-  return cat.includes(catId.toLowerCase());
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  return cat.includes(lower);
 };
 
 function getProductStockCount(product) {
@@ -202,8 +366,8 @@ export default function PricesPage({
     return String(str).toLowerCase().replace(/[\s\-_/\\+]/g, '');
   };
 
-  // Consolidate identical products from different suppliers into unified entries and blend live stock
-  const consolidatedItems = useMemo(() => {
+  // 1. Unified consolidated catalog combining all products and live warehouse/shop stock
+  const baseConsolidatedItems = useMemo(() => {
     const stockMap = new Map();
     if (Array.isArray(stock) && stock.length > 0) {
       stock.forEach((s) => {
@@ -222,7 +386,7 @@ export default function PricesPage({
       if (pId) pool.set(pId, item);
     });
 
-    // If stock contains items that match the category or aren't in incoming items, include them
+    // If stock contains items that aren't in incoming items, include them
     if (Array.isArray(stock) && stock.length > 0) {
       stock.forEach((s) => {
         const pId = String(s.product_id || s.id || '');
@@ -264,20 +428,102 @@ export default function PricesPage({
       return item;
     });
 
-    let consolidated = consolidateProductList(enhancedItems);
+    return consolidateProductList(enhancedItems);
+  }, [items, stock]);
+
+  // 2. Dynamically determine available categories based ONLY on products/stock actually added
+  // Categories with 0 products are automatically removed!
+  const availableCategories = useMemo(() => {
+    const list = [];
+    const totalCount = baseConsolidatedItems.length;
+
+    // "All Items" pill with total count
+    list.push({
+      id: '',
+      label: 'All Items',
+      icon: Boxes,
+      count: totalCount,
+      colorTheme: 'from-slate-800 via-slate-800 to-slate-900',
+      activeGlow: 'shadow-slate-800/30 ring-slate-400/40',
+      iconColor: 'text-slate-600',
+    });
+
+    // Check each blueprint and ONLY include if count > 0!
+    CATEGORY_BLUEPRINTS.forEach((bp) => {
+      const count = baseConsolidatedItems.filter((item) => bp.matcher(item)).length;
+      if (count > 0) {
+        list.push({
+          ...bp,
+          count,
+        });
+      }
+    });
+
+    // Check for any leftover products that have an explicit category not matched by blueprints
+    const matchedKeys = new Set();
+    baseConsolidatedItems.forEach((item) => {
+      const isMatched = CATEGORY_BLUEPRINTS.some((bp) => bp.matcher(item));
+      if (isMatched) {
+        matchedKeys.add(String(item.id || item.product_id || ''));
+      }
+    });
+
+    const otherItems = baseConsolidatedItems.filter((item) => !matchedKeys.has(String(item.id || item.product_id || '')));
+    if (otherItems.length > 0) {
+      const otherGroup = new Map();
+      otherItems.forEach((item) => {
+        const catName = String(item.part_category || item.category || 'Other').trim();
+        if (catName) {
+          otherGroup.set(catName, (otherGroup.get(catName) || 0) + 1);
+        }
+      });
+      otherGroup.forEach((cnt, catName) => {
+        if (cnt > 0) {
+          list.push({
+            id: `custom_${catName.toLowerCase()}`,
+            label: catName,
+            icon: LayoutGrid,
+            count: cnt,
+            matcher: (item) => String(item.part_category || item.category || '').trim().toLowerCase() === catName.toLowerCase(),
+            colorTheme: 'from-violet-600 via-purple-600 to-indigo-700',
+            activeGlow: 'shadow-purple-600/30 ring-purple-400/40',
+            iconColor: 'text-purple-600',
+          });
+        }
+      });
+    }
+
+    return list;
+  }, [baseConsolidatedItems]);
+
+  // If currently selected category no longer exists in available categories, reset to All Items
+  useEffect(() => {
+    if (selectedCategory && !availableCategories.some((c) => c.id.toLowerCase() === selectedCategory.toLowerCase())) {
+      setSelectedCategory('');
+    }
+  }, [availableCategories, selectedCategory]);
+
+  // 3. Filter items by selectedCategory and search tokens
+  const consolidatedItems = useMemo(() => {
+    let result = baseConsolidatedItems;
 
     // Apply Quick Category Filter if selected
     if (selectedCategory) {
-      consolidated = consolidated.filter((product) => isProductMatchingCategory(product, selectedCategory));
+      const matchingCat = availableCategories.find((c) => c.id.toLowerCase() === selectedCategory.toLowerCase());
+      if (matchingCat && typeof matchingCat.matcher === 'function') {
+        result = result.filter((product) => matchingCat.matcher(product));
+      } else {
+        result = result.filter((product) => isProductMatchingCategory(product, selectedCategory));
+      }
     }
 
     const query = String(search || '').trim();
-    if (!query) return consolidated;
+    if (!query) return result;
 
     // Split query into lowercase individual search terms
     const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
 
-    return consolidated.filter((product) => {
+    return result.filter((product) => {
       // Build a searchable string combining all attributes
       const searchableHaystack = [
         product.name,
@@ -314,7 +560,7 @@ export default function PricesPage({
       // Match if EVERY typed token is present in the haystack
       return tokens.every((token) => searchableHaystack.includes(token));
     });
-  }, [items, stock, search, selectedCategory]);
+  }, [baseConsolidatedItems, selectedCategory, availableCategories, search]);
 
   // Quick Stock Modal State
   const [stockProduct, setStockProduct] = useState(null);
@@ -537,22 +783,22 @@ export default function PricesPage({
     if (Array.isArray(stock) && stock.length > 0) {
       return stock.reduce((sum, item) => sum + Number(item.quantity ?? item.available_stock ?? item.stock ?? item.warehouse_stock ?? 0), 0);
     }
-    return consolidatedItems.reduce((sum, item) => sum + getEffectiveStock(item), 0);
-  }, [stock, consolidatedItems, stockOverrides]);
+    return baseConsolidatedItems.reduce((sum, item) => sum + getEffectiveStock(item), 0);
+  }, [stock, baseConsolidatedItems, stockOverrides]);
 
-  const stockRowsCount = Number(pager?.total || items?.length || consolidatedItems.length);
-  const catalogModelsCount = consolidatedItems.length || stockRowsCount;
+  const stockRowsCount = Number(pager?.total || items?.length || baseConsolidatedItems.length);
+  const catalogModelsCount = baseConsolidatedItems.length || stockRowsCount;
 
   const lowStockCount = useMemo(() => {
-    return consolidatedItems.filter((item) => {
+    return baseConsolidatedItems.filter((item) => {
       const qty = getEffectiveStock(item);
       return qty > 0 && qty <= 4;
     }).length;
-  }, [consolidatedItems, stockOverrides]);
+  }, [baseConsolidatedItems, stockOverrides]);
 
   const outOfStockCount = useMemo(() => {
-    return consolidatedItems.filter((item) => getEffectiveStock(item) === 0).length;
-  }, [consolidatedItems, stockOverrides]);
+    return baseConsolidatedItems.filter((item) => getEffectiveStock(item) === 0).length;
+  }, [baseConsolidatedItems, stockOverrides]);
 
   return (
     <div className="space-y-5 animate-fadeIn pb-12">
@@ -686,20 +932,47 @@ export default function PricesPage({
         </div>
       </div>
 
-      {/* Quick Category Chips Row */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none my-1">
-        {quickCategories.map((cat) => {
-          const Icon = cat.icon;
+      {/* Quick Category Chips / Animated Filter Bar */}
+      <div className="flex items-center gap-2.5 overflow-x-auto py-2 px-0.5 scrollbar-none my-1">
+        {availableCategories.map((cat) => {
+          const Icon = cat.icon || Boxes;
           const isActive = (!cat.id && !selectedCategory) || (cat.id && selectedCategory.toLowerCase() === cat.id.toLowerCase());
+          
           return (
             <button
               key={cat.id || 'all'}
               type="button"
               onClick={() => setSelectedCategory(isActive && cat.id ? '' : cat.id)}
-              className={`category-chip ${isActive ? 'active' : ''}`}
+              className={`group relative inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 transform cursor-pointer select-none active:scale-95 shrink-0 ${
+                isActive
+                  ? `bg-gradient-to-r ${cat.colorTheme || 'from-teal-600 to-emerald-600'} text-white shadow-md ${cat.activeGlow || 'shadow-teal-500/25'} ring-2 ring-white/70 -translate-y-0.5`
+                  : `bg-white hover:bg-slate-50/90 text-slate-700 hover:text-slate-900 border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-xs hover:-translate-y-0.5`
+              }`}
+              title={`Filter by ${cat.label} (${cat.count} items)`}
             >
-              <Icon size={13} />
-              <span>{cat.label}</span>
+              {/* Subtle animated ambient highlight when active */}
+              {isActive && (
+                <span className="absolute inset-0 rounded-xl bg-white/15 animate-pulse pointer-events-none" />
+              )}
+              
+              {/* Category Icon with smooth hover micro-animation */}
+              <span className={`inline-flex items-center justify-center transition-transform duration-200 group-hover:scale-115 ${
+                isActive ? 'text-white' : (cat.iconColor || 'text-slate-500 group-hover:text-slate-800')
+              }`}>
+                <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
+              </span>
+
+              {/* Category Label */}
+              <span className="tracking-tight whitespace-nowrap">{cat.label}</span>
+
+              {/* Dynamic Count Badge */}
+              <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded-md text-[10px] font-black transition-all duration-200 ${
+                isActive
+                  ? 'bg-white/25 text-white ring-1 ring-white/30 shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200/80 group-hover:text-slate-900'
+              }`}>
+                {cat.count.toLocaleString('en-IN')}
+              </span>
             </button>
           );
         })}

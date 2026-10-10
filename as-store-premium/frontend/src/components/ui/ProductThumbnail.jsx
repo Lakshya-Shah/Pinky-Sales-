@@ -4,7 +4,19 @@ import { Smartphone, BatteryCharging, Camera, Volume2, Zap, Layers, Package, Zoo
 export const getCategoryIconInfo = (category = '') => {
   const cat = String(category || '').toLowerCase().trim();
   
-  if (cat.includes('display') || cat.includes('screen') || cat.includes('combo') || cat.includes('touch') || cat.includes('folder') || cat.includes('oled') || cat.includes('incell') || cat.includes('lcd')) {
+  if (cat.includes('oca') || cat.includes('touch plate') || cat === 'oca glass') {
+    return {
+      Icon: Layers,
+      emoji: '🔲',
+      label: 'OCA Glass',
+      gradient: 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)',
+      color: '#ffffff',
+      border: 'transparent',
+      shadow: '0 3px 10px rgba(6, 182, 212, 0.3)',
+    };
+  }
+
+  if (cat.includes('display') || cat.includes('screen') || cat.includes('combo') || (cat.includes('touch') && !cat.includes('plate')) || cat.includes('folder') || cat.includes('oled') || cat.includes('incell') || cat.includes('lcd')) {
     return {
       Icon: Smartphone,
       emoji: '📱',
@@ -12,7 +24,7 @@ export const getCategoryIconInfo = (category = '') => {
       gradient: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
       color: '#ffffff',
       border: 'transparent',
-      shadow: '0 3px 10px rgba(13, 148, 136, 0.3)',
+      shadow: '0 3px 10px rgba(139, 148, 136, 0.3)',
     };
   }
   if (cat.includes('battery') || cat.includes('cell') || cat.includes('power')) {
