@@ -94,8 +94,15 @@ import SmartSkeletonWrapper, { CardSkeleton, TableRowSkeleton } from './componen
 import SearchInput from './components/ui/SearchInput';
 import SearchableCombobox from './components/ui/SearchableCombobox';
 import RedesignedDashboard from './components/dashboard/RedesignedDashboard';
-import BulkAddProductsModal from './components/modals/BulkAddProductsModal';
 import { consolidateProductList } from './utils/productConsolidation';
+import {
+  isToolsProduct,
+  isBatteryProduct,
+  isDisplayProduct,
+  isOcaGlassProduct,
+  isSparesProduct,
+  isOtherCategoryProduct,
+} from './utils/productCategories';
 import { 
   shareToWhatsAppService, 
   formatWhatsAppMessage,
@@ -561,91 +568,12 @@ const sidebarSectionsByRole = {
 sidebarSectionsByRole.admin = sidebarSectionsByRole.shopkeeper;
 sidebarSectionsByRole.user = sidebarSectionsByRole.customer;
 
-const isToolsCategory = (p) => {
-  const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
-  const name = String(p?.short_name || p?.name || '').toLowerCase();
-  return cat.includes('tool') || 
-         cat.includes('blade') || 
-         cat.includes('cutter') || 
-         cat.includes('tweezer') || 
-         cat.includes('cleaning') || 
-         cat.includes('solvent') || 
-         cat.includes('machine') || 
-         cat.includes('soldering') || 
-         cat.includes('screw') || 
-         cat.includes('opening') ||
-         name.includes('screw') ||
-         name.includes('tweezer') ||
-         name.includes('opener');
-};
-
-const isBatteryCategory = (p) => {
-  if (isToolsCategory(p)) return false;
-  const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
-  const name = String(p?.short_name || p?.name || '').toLowerCase();
-  return cat.includes('battery') || 
-         cat.includes('batt') || 
-         name.includes('battery') || 
-         name.includes('batt.') || 
-         name.includes('batt ') || 
-         name.endsWith('batt') ||
-         /\bbt\b/i.test(name) ||
-         /bt\s*\(/i.test(name) ||
-         /bt\s*$/i.test(name);
-};
-
-const isSparesCategory = (p) => {
-  if (isBatteryCategory(p)) return false;
-  const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
-  const name = String(p?.short_name || p?.name || '').toLowerCase();
-  return cat.includes('spare') || 
-         cat.includes('flex') || 
-         cat.includes('ic') || 
-         cat.includes('camera') || 
-         cat.includes('charging') || 
-         cat.includes('speaker') || 
-         cat.includes('sim') || 
-         cat.includes('housing') || 
-         cat.includes('button') || 
-         cat.includes('pcb') || 
-         cat.includes('mic') || 
-         cat.includes('ringer') || 
-         cat.includes('vibrat') ||
-         cat.includes('sensor');
-};
-
-const isOcaGlassCategory = (p) => {
-  const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
-  const name = String(p?.short_name || p?.name || '').toLowerCase();
-  return cat.includes('oca') || 
-         cat.includes('touch plate') ||
-         (cat.includes('glass') && !cat.includes('back glass') && !cat.includes('housing')) || 
-         name.includes('oca') || 
-         name.includes('touch plate') ||
-         name.includes(' tp ') ||
-         name.endsWith(' tp') ||
-         /tp\s*\(/i.test(name) ||
-         (name.includes('glass') && !name.includes('back glass') && !cat.includes('display'));
-};
-
-const isDisplayCategory = (p) => {
-  if (isOcaGlassCategory(p)) return false;
-  const cat = String(p?.part_category || p?.part_category_name || p?.category || '').trim().toLowerCase();
-  return cat === 'display' || 
-         cat.includes('display') || 
-         cat.includes('combo') || 
-         cat.includes('folder') || 
-         cat.includes('screen') || 
-         cat.includes('lcd') || 
-         cat.includes('oled') || 
-         cat.includes('tft') || 
-         cat.includes('incell') || 
-         cat.includes('in-cell');
-};
-
-const isOtherCategory = (p) => {
-  return !isToolsCategory(p) && !isBatteryCategory(p) && !isSparesCategory(p) && !isOcaGlassCategory(p) && !isDisplayCategory(p);
-};
+const isToolsCategory = isToolsProduct;
+const isBatteryCategory = isBatteryProduct;
+const isSparesCategory = isSparesProduct;
+const isOcaGlassCategory = isOcaGlassProduct;
+const isDisplayCategory = isDisplayProduct;
+const isOtherCategory = isOtherCategoryProduct;
 
 const pageMetaById = {
   dashboard: {
@@ -3195,7 +3123,7 @@ function App() {
     try {
       await Promise.all([
         loadCore(),
-        loadProductPage({ tab: active === 'tools' || active === 'spares' || active === 'battery' ? active : 'prices', page: 1 }),
+        loadProductPage({ tab: ['tools', 'spares', 'battery', 'oca-glass'].includes(active) ? active : 'prices', page: 1 }),
         active === 'stock' ? loadTab('stock', shopId) : Promise.resolve(),
       ]);
     } catch (err) {
@@ -9109,12 +9037,8 @@ function App() {
                 showToast={showToast}
                 saving={saving}
                 items={batteryItems}
-                pager={{
-                  ...productPager,
-                  total: batteryItems.length,
-                  totalProducts: batteryItems.length,
-                  totalPages: Math.max(1, Math.ceil(batteryItems.length / (productPager.limit || 50))),
-                }}
+                search={batterySearch}
+                loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('battery', {}, exportItems || batteryItems)}
                 onSearchChange={(value) => setBatterySearch(value)}
                 onViewDetails={setSelectedProductDetails}
@@ -9143,7 +9067,6 @@ function App() {
                 saving={saving}
                 items={ocaGlassItems}
                 search={ocaSearch}
-                pager={productPager}
                 loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('oca-glass', {}, exportItems || ocaGlassItems)}
                 onSearchChange={(value) => setOcaSearch(value)}
@@ -9154,6 +9077,8 @@ function App() {
                 productName={productName}
                 fullModelList={fullModelList}
                 priceLabel={priceLabel}
+                categoryType="oca-glass"
+                onOpenAddToolSpare={openAddToolSpareModal}
               />
             </PageWrapper>
           )}
@@ -9171,7 +9096,6 @@ function App() {
                 saving={saving}
                 items={otherCategoryItems}
                 search={otherCategorySearch}
-                pager={productPager}
                 loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('other-category', {}, exportItems || otherCategoryItems)}
                 onSearchChange={(value) => setOtherCategorySearch(value)}
@@ -9182,6 +9106,8 @@ function App() {
                 productName={productName}
                 fullModelList={fullModelList}
                 priceLabel={priceLabel}
+                categoryType="other-category"
+                onOpenAddToolSpare={openAddToolSpareModal}
               />
             </PageWrapper>
           )}

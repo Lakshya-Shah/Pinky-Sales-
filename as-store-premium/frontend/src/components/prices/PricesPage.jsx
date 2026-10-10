@@ -34,140 +34,32 @@ import Pagination from '../ui/Pagination';
 import { calculateConsolidatedProduct, consolidateProductList } from '../../utils/productConsolidation';
 import CostWithBatchHistory from './CostWithBatchHistory';
 
-export const isOcaGlassProduct = (product) => {
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('oca') || 
-         cat.includes('touch plate') ||
-         cat === 'oca glass' ||
-         (cat.includes('glass') && !cat.includes('back glass') && !cat.includes('housing')) || 
-         name.includes('oca') || 
-         name.includes('touch plate') ||
-         name.includes(' tp ') ||
-         name.endsWith(' tp') ||
-         /tp\s*\(/i.test(name) ||
-         (name.includes('glass') && !name.includes('back glass') && !cat.includes('display'));
-};
-
-export const isBatteryProduct = (product) => {
-  if (isOcaGlassProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('battery') || 
-         cat.includes('batt') || 
-         name.includes('battery') || 
-         name.includes('batt.') || 
-         name.includes('batt ') || 
-         name.endsWith('batt') ||
-         /\bbt\b/i.test(name) ||
-         /bt\s*\(/i.test(name) ||
-         /bt\s*$/i.test(name);
-};
-
-export const isDisplayProduct = (product) => {
-  // CRITICAL: NEVER match OCA Glass, Touch Plate, or Battery as Display!
-  if (isOcaGlassProduct(product) || isBatteryProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat === 'display' || 
-         cat.includes('display') || 
-         cat.includes('combo') || 
-         cat.includes('folder') || 
-         cat.includes('screen') || 
-         cat.includes('lcd') || 
-         cat.includes('oled') || 
-         cat.includes('tft') || 
-         cat.includes('incell') || 
-         cat.includes('in-cell') || 
-         name.includes('combo') || 
-         name.includes('folder') || 
-         name.includes('display') ||
-         name.includes('incell');
-};
-
-export const isToolsProduct = (product) => {
-  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('tool') || 
-         cat.includes('blade') || 
-         cat.includes('cutter') || 
-         cat.includes('tweezer') || 
-         cat.includes('cleaning') || 
-         cat.includes('solvent') || 
-         cat.includes('machine') || 
-         cat.includes('soldering') || 
-         cat.includes('screw') || 
-         cat.includes('opening') ||
-         name.includes('screw') ||
-         name.includes('tweezer') ||
-         name.includes('opener');
-};
-
-export const isCameraProduct = (product) => {
-  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('camera') || 
-         cat.includes('cam') || 
-         name.includes('camera') || 
-         name.includes('cam ') ||
-         name.includes('cam(');
-};
-
-export const isSpeakerProduct = (product) => {
-  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('speaker') || 
-         cat.includes('ringer') || 
-         cat.includes('mic') || 
-         cat.includes('buzzer') || 
-         cat.includes('earpiece') || 
-         name.includes('speaker') || 
-         name.includes('ringer') || 
-         name.includes('buzzer');
-};
-
-export const isChargingProduct = (product) => {
-  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('charging') || 
-         cat.includes('sub board') || 
-         cat.includes('cc board') || 
-         (cat.includes('flex') && !cat.includes('display')) || 
-         name.includes('charging') || 
-         name.includes('flex') || 
-         name.includes('cc board');
-};
-
-export const isHousingProduct = (product) => {
-  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('housing') || 
-         cat.includes('body') || 
-         cat.includes('back glass') || 
-         cat.includes('middle') || 
-         cat.includes('frame') || 
-         name.includes('housing') || 
-         name.includes('back glass') || 
-         name.includes('frame');
-};
-
-export const isSparesProduct = (product) => {
-  if (isOcaGlassProduct(product) || isBatteryProduct(product) || isDisplayProduct(product) || isToolsProduct(product) || isCameraProduct(product) || isSpeakerProduct(product) || isChargingProduct(product) || isHousingProduct(product)) return false;
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  const name = String(product?.short_name || product?.name || '').toLowerCase();
-  return cat.includes('spare') || 
-         cat.includes('ic') || 
-         cat.includes('sim') || 
-         cat.includes('button') || 
-         cat.includes('pcb') || 
-         cat.includes('vibrat') ||
-         cat.includes('sensor');
-};
+export {
+  isToolsProduct,
+  isBatteryProduct,
+  isDisplayProduct,
+  isOcaGlassProduct,
+  isCameraProduct,
+  isSpeakerProduct,
+  isChargingProduct,
+  isHousingProduct,
+  isSparesProduct,
+  isOtherCategoryProduct,
+  isProductMatchingCategory,
+} from '../../utils/productCategories';
+import {
+  isToolsProduct,
+  isBatteryProduct,
+  isDisplayProduct,
+  isOcaGlassProduct,
+  isCameraProduct,
+  isSpeakerProduct,
+  isChargingProduct,
+  isHousingProduct,
+  isSparesProduct,
+  isOtherCategoryProduct,
+  isProductMatchingCategory,
+} from '../../utils/productCategories';
 
 export const CATEGORY_BLUEPRINTS = [
   {
@@ -253,22 +145,6 @@ export const CATEGORY_BLUEPRINTS = [
   },
 ];
 
-export const isProductMatchingCategory = (product, catId) => {
-  if (!catId) return true;
-  const lower = String(catId).toLowerCase();
-  if (lower === 'display') return isDisplayProduct(product);
-  if (lower === 'battery') return isBatteryProduct(product);
-  if (lower === 'ocaglass' || lower === 'oca-glass' || lower === 'oca glass') return isOcaGlassProduct(product);
-  if (lower === 'tools' || lower === 'tool') return isToolsProduct(product);
-  if (lower === 'spares' || lower === 'spare') return isSparesProduct(product);
-  if (lower === 'camera') return isCameraProduct(product);
-  if (lower === 'speaker') return isSpeakerProduct(product);
-  if (lower === 'charging port' || lower === 'charging') return isChargingProduct(product);
-  if (lower === 'housing') return isHousingProduct(product);
-  
-  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
-  return cat.includes(lower);
-};
 
 function getProductStockCount(product) {
   if (!product) return 0;
@@ -331,13 +207,7 @@ export default function PricesPage({
   onOpenAddToolSpare,
 }) {
   const [activeMenuId, setActiveMenuId] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState(categoryType === 'battery' ? 'Battery' : '');
-
-  useEffect(() => {
-    if (categoryType === 'battery') {
-      setSelectedCategory('Battery');
-    }
-  }, [categoryType]);
+  const [selectedCategory, setSelectedCategory] = useState('');
 
   // Local immediate input state for 0ms typing response + debounced propagation to parent fetcher
   const [localSearch, setLocalSearch] = useState(search);
@@ -383,14 +253,21 @@ export default function PricesPage({
     const pool = new Map();
     (items || []).forEach((item) => {
       const pId = String(item.product_id || item.id || '');
-      if (pId) pool.set(pId, item);
+      if (pId) {
+        if (!categoryType || isProductMatchingCategory(item, categoryType)) {
+          pool.set(pId, item);
+        }
+      }
     });
 
-    // If stock contains items that aren't in incoming items, include them
+    // If stock contains items that aren't in incoming items, include them (scoped to categoryType if specified)
     if (Array.isArray(stock) && stock.length > 0) {
       stock.forEach((s) => {
         const pId = String(s.product_id || s.id || '');
         if (pId && !pool.has(pId)) {
+          if (categoryType && !isProductMatchingCategory(s, categoryType)) {
+            return;
+          }
           pool.set(pId, {
             ...s,
             id: Number(pId),
@@ -428,8 +305,13 @@ export default function PricesPage({
       return item;
     });
 
-    return consolidateProductList(enhancedItems);
-  }, [items, stock]);
+    const consolidated = consolidateProductList(enhancedItems);
+    // Strict category guarantee: on dedicated category pages, only products of that category are included
+    if (categoryType) {
+      return consolidated.filter((item) => isProductMatchingCategory(item, categoryType));
+    }
+    return consolidated;
+  }, [items, stock, categoryType]);
 
   // 2. Dynamically determine available categories based ONLY on products/stock actually added
   // Categories with 0 products are automatically removed!
@@ -448,9 +330,32 @@ export default function PricesPage({
       iconColor: 'text-slate-600',
     });
 
+    // If on a dedicated category page, only allow relevant sub-category blueprints!
+    // Never show Displays or Batteries on Tools/OCA pages!
+    const relevantBlueprints = categoryType
+      ? CATEGORY_BLUEPRINTS.filter((bp) => {
+          if (categoryType === 'spares') {
+            return ['Spares', 'Camera', 'Speaker', 'Charging Port', 'Housing'].includes(bp.id);
+          }
+          if (categoryType === 'oca-glass') {
+            return bp.id === 'OcaGlass';
+          }
+          if (categoryType === 'tools') {
+            return bp.id === 'Tools';
+          }
+          if (categoryType === 'battery') {
+            return bp.id === 'Battery';
+          }
+          return false;
+        })
+      : CATEGORY_BLUEPRINTS;
+
     // Check each blueprint and ONLY include if count > 0!
-    CATEGORY_BLUEPRINTS.forEach((bp) => {
+    relevantBlueprints.forEach((bp) => {
       const count = baseConsolidatedItems.filter((item) => bp.matcher(item)).length;
+      if (categoryType && count === totalCount && relevantBlueprints.length === 1) {
+        return;
+      }
       if (count > 0) {
         list.push({
           ...bp,
@@ -459,38 +364,40 @@ export default function PricesPage({
       }
     });
 
-    // Check for any leftover products that have an explicit category not matched by blueprints
-    const matchedKeys = new Set();
-    baseConsolidatedItems.forEach((item) => {
-      const isMatched = CATEGORY_BLUEPRINTS.some((bp) => bp.matcher(item));
-      if (isMatched) {
-        matchedKeys.add(String(item.id || item.product_id || ''));
-      }
-    });
+    // Check for any leftover products only on general Prices page
+    if (!categoryType) {
+      const matchedKeys = new Set();
+      baseConsolidatedItems.forEach((item) => {
+        const isMatched = CATEGORY_BLUEPRINTS.some((bp) => bp.matcher(item));
+        if (isMatched) {
+          matchedKeys.add(String(item.id || item.product_id || ''));
+        }
+      });
 
-    const otherItems = baseConsolidatedItems.filter((item) => !matchedKeys.has(String(item.id || item.product_id || '')));
-    if (otherItems.length > 0) {
-      const otherGroup = new Map();
-      otherItems.forEach((item) => {
-        const catName = String(item.part_category || item.category || 'Other').trim();
-        if (catName) {
-          otherGroup.set(catName, (otherGroup.get(catName) || 0) + 1);
-        }
-      });
-      otherGroup.forEach((cnt, catName) => {
-        if (cnt > 0) {
-          list.push({
-            id: `custom_${catName.toLowerCase()}`,
-            label: catName,
-            icon: LayoutGrid,
-            count: cnt,
-            matcher: (item) => String(item.part_category || item.category || '').trim().toLowerCase() === catName.toLowerCase(),
-            colorTheme: 'from-violet-600 via-purple-600 to-indigo-700',
-            activeGlow: 'shadow-purple-600/30 ring-purple-400/40',
-            iconColor: 'text-purple-600',
-          });
-        }
-      });
+      const otherItems = baseConsolidatedItems.filter((item) => !matchedKeys.has(String(item.id || item.product_id || '')));
+      if (otherItems.length > 0) {
+        const otherGroup = new Map();
+        otherItems.forEach((item) => {
+          const catName = String(item.part_category || item.category || 'Other').trim();
+          if (catName) {
+            otherGroup.set(catName, (otherGroup.get(catName) || 0) + 1);
+          }
+        });
+        otherGroup.forEach((cnt, catName) => {
+          if (cnt > 0) {
+            list.push({
+              id: `custom_${catName.toLowerCase()}`,
+              label: catName,
+              icon: LayoutGrid,
+              count: cnt,
+              matcher: (item) => String(item.part_category || item.category || '').trim().toLowerCase() === catName.toLowerCase(),
+              colorTheme: 'from-violet-600 via-purple-600 to-indigo-700',
+              activeGlow: 'shadow-purple-600/30 ring-purple-400/40',
+              iconColor: 'text-purple-600',
+            });
+          }
+        });
+      }
     }
 
     return list;
@@ -561,6 +468,61 @@ export default function PricesPage({
       return tokens.every((token) => searchableHaystack.includes(token));
     });
   }, [baseConsolidatedItems, selectedCategory, availableCategories, search]);
+
+  // Determine if this view uses server-side pagination:
+  // Server-paged ONLY on general Prices page without category filter and with loaded external pager
+  const isServerPaged = !categoryType && !selectedCategory && Boolean(pager?.loaded) && typeof onPageChange === 'function';
+
+  // Client-side pagination state for category pages (tools, spares, battery, oca-glass) & filtered views
+  const [clientPage, setClientPage] = useState(1);
+  const [clientPageSize, setClientPageSize] = useState(() => Number(pager?.limit) || 50);
+
+  // Reset client page to 1 when search query, selected category filter, or categoryType changes
+  useEffect(() => {
+    setClientPage(1);
+  }, [search, selectedCategory, categoryType]);
+
+  const clientTotalPages = Math.max(1, Math.ceil(consolidatedItems.length / clientPageSize));
+
+  useEffect(() => {
+    if (clientPage > clientTotalPages && clientTotalPages > 0) {
+      setClientPage(1);
+    }
+  }, [clientTotalPages, clientPage]);
+
+  // Active page metadata
+  const activePage = isServerPaged ? Number(pager?.page || 1) : clientPage;
+  const activePageSize = isServerPaged ? Number(pager?.limit || 50) : clientPageSize;
+  const totalItemsCount = isServerPaged ? Number(pager?.total || consolidatedItems.length) : consolidatedItems.length;
+  const totalPagesCount = isServerPaged ? Math.max(1, Number(pager?.totalPages || 1)) : clientTotalPages;
+
+  // Paginated list of products to render in the table
+  const displayedItems = useMemo(() => {
+    if (isServerPaged) {
+      return consolidatedItems;
+    }
+    const startIndex = (clientPage - 1) * clientPageSize;
+    return consolidatedItems.slice(startIndex, startIndex + clientPageSize);
+  }, [isServerPaged, consolidatedItems, clientPage, clientPageSize]);
+
+  const handlePageChange = (newPage) => {
+    if (isServerPaged) {
+      onPageChange(newPage);
+    } else {
+      setClientPage(newPage);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handlePageSizeChange = (newLimit) => {
+    if (isServerPaged) {
+      onPageSizeChange(newLimit);
+    } else {
+      setClientPageSize(newLimit);
+      setClientPage(1);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Quick Stock Modal State
   const [stockProduct, setStockProduct] = useState(null);
@@ -780,14 +742,14 @@ export default function PricesPage({
 
   // Computed KPI Metrics for Stock & Prices
   const totalStockUnits = useMemo(() => {
-    if (Array.isArray(stock) && stock.length > 0) {
+    if (!categoryType && Array.isArray(stock) && stock.length > 0) {
       return stock.reduce((sum, item) => sum + Number(item.quantity ?? item.available_stock ?? item.stock ?? item.warehouse_stock ?? 0), 0);
     }
     return baseConsolidatedItems.reduce((sum, item) => sum + getEffectiveStock(item), 0);
-  }, [stock, baseConsolidatedItems, stockOverrides]);
+  }, [categoryType, stock, baseConsolidatedItems, stockOverrides]);
 
-  const stockRowsCount = Number(pager?.total || items?.length || baseConsolidatedItems.length);
-  const catalogModelsCount = baseConsolidatedItems.length || stockRowsCount;
+  const stockRowsCount = baseConsolidatedItems.length;
+  const catalogModelsCount = baseConsolidatedItems.length;
 
   const lowStockCount = useMemo(() => {
     return baseConsolidatedItems.filter((item) => {
@@ -912,71 +874,75 @@ export default function PricesPage({
             <span>Export Excel</span>
           </button>
 
-          {['tools', 'spares', 'battery'].includes(categoryType) && typeof onOpenAddToolSpare === 'function' && role !== 'customer' && (
+          {['tools', 'spares', 'battery', 'oca-glass'].includes(categoryType) && typeof onOpenAddToolSpare === 'function' && role !== 'customer' && (
             <button
               type="button"
-              onClick={() => onOpenAddToolSpare(categoryType)}
+              onClick={() => onOpenAddToolSpare(categoryType === 'oca-glass' ? 'OCA Glass' : categoryType)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-sm cursor-pointer active:scale-95 ${
                 categoryType === 'tools'
                   ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
                   : categoryType === 'battery'
                   ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                  : categoryType === 'oca-glass'
+                  ? 'bg-cyan-600 hover:bg-cyan-700 shadow-cyan-600/20'
                   : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
               }`}
-              title={`Add a new ${categoryType === 'tools' ? 'tool' : categoryType === 'battery' ? 'battery' : 'spare'} and initial stock`}
+              title={`Add a new ${categoryType === 'tools' ? 'tool' : categoryType === 'battery' ? 'battery' : categoryType === 'oca-glass' ? 'OCA glass' : 'spare'} and initial stock`}
             >
               <Plus className="w-4 h-4" />
-              <span>Add {categoryType === 'tools' ? 'Tool' : categoryType === 'battery' ? 'Battery' : 'Spare'}</span>
+              <span>Add {categoryType === 'tools' ? 'Tool' : categoryType === 'battery' ? 'Battery' : categoryType === 'oca-glass' ? 'OCA Glass' : 'Spare'}</span>
             </button>
           )}
         </div>
       </div>
 
       {/* Quick Category Chips / Animated Filter Bar */}
-      <div className="flex items-center gap-2.5 overflow-x-auto py-2 px-0.5 scrollbar-none my-1">
-        {availableCategories.map((cat) => {
-          const Icon = cat.icon || Boxes;
-          const isActive = (!cat.id && !selectedCategory) || (cat.id && selectedCategory.toLowerCase() === cat.id.toLowerCase());
-          
-          return (
-            <button
-              key={cat.id || 'all'}
-              type="button"
-              onClick={() => setSelectedCategory(isActive && cat.id ? '' : cat.id)}
-              className={`group relative inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 transform cursor-pointer select-none active:scale-95 shrink-0 ${
-                isActive
-                  ? `bg-gradient-to-r ${cat.colorTheme || 'from-teal-600 to-emerald-600'} text-white shadow-md ${cat.activeGlow || 'shadow-teal-500/25'} ring-2 ring-white/70 -translate-y-0.5`
-                  : `bg-white hover:bg-slate-50/90 text-slate-700 hover:text-slate-900 border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-xs hover:-translate-y-0.5`
-              }`}
-              title={`Filter by ${cat.label} (${cat.count} items)`}
-            >
-              {/* Subtle animated ambient highlight when active */}
-              {isActive && (
-                <span className="absolute inset-0 rounded-xl bg-white/15 animate-pulse pointer-events-none" />
-              )}
-              
-              {/* Category Icon with smooth hover micro-animation */}
-              <span className={`inline-flex items-center justify-center transition-transform duration-200 group-hover:scale-115 ${
-                isActive ? 'text-white' : (cat.iconColor || 'text-slate-500 group-hover:text-slate-800')
-              }`}>
-                <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
-              </span>
+      {availableCategories.length > 1 && (
+        <div className="flex items-center gap-2.5 overflow-x-auto py-2 px-0.5 scrollbar-none my-1">
+          {availableCategories.map((cat) => {
+            const Icon = cat.icon || Boxes;
+            const isActive = (!cat.id && !selectedCategory) || (cat.id && selectedCategory.toLowerCase() === cat.id.toLowerCase());
+            
+            return (
+              <button
+                key={cat.id || 'all'}
+                type="button"
+                onClick={() => setSelectedCategory(isActive && cat.id ? '' : cat.id)}
+                className={`group relative inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 transform cursor-pointer select-none active:scale-95 shrink-0 ${
+                  isActive
+                    ? `bg-gradient-to-r ${cat.colorTheme || 'from-teal-600 to-emerald-600'} text-white shadow-md ${cat.activeGlow || 'shadow-teal-500/25'} ring-2 ring-white/70 -translate-y-0.5`
+                    : `bg-white hover:bg-slate-50/90 text-slate-700 hover:text-slate-900 border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-xs hover:-translate-y-0.5`
+                }`}
+                title={`Filter by ${cat.label} (${cat.count} items)`}
+              >
+                {/* Subtle animated ambient highlight when active */}
+                {isActive && (
+                  <span className="absolute inset-0 rounded-xl bg-white/15 animate-pulse pointer-events-none" />
+                )}
+                
+                {/* Category Icon with smooth hover micro-animation */}
+                <span className={`inline-flex items-center justify-center transition-transform duration-200 group-hover:scale-115 ${
+                  isActive ? 'text-white' : (cat.iconColor || 'text-slate-500 group-hover:text-slate-800')
+                }`}>
+                  <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
+                </span>
 
-              {/* Category Label */}
-              <span className="tracking-tight whitespace-nowrap">{cat.label}</span>
+                {/* Category Label */}
+                <span className="tracking-tight whitespace-nowrap">{cat.label}</span>
 
-              {/* Dynamic Count Badge */}
-              <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded-md text-[10px] font-black transition-all duration-200 ${
-                isActive
-                  ? 'bg-white/25 text-white ring-1 ring-white/30 shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200/80 group-hover:text-slate-900'
-              }`}>
-                {cat.count.toLocaleString('en-IN')}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                {/* Dynamic Count Badge */}
+                <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded-md text-[10px] font-black transition-all duration-200 ${
+                  isActive
+                    ? 'bg-white/25 text-white ring-1 ring-white/30 shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200/80 group-hover:text-slate-900'
+                }`}>
+                  {cat.count.toLocaleString('en-IN')}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Main Stock & Price Table View */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
@@ -990,7 +956,7 @@ export default function PricesPage({
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {consolidatedItems.map((product) => {
+            {displayedItems.map((product) => {
               const stockQtyVal = getEffectiveStock(product);
               const isOutOfStock = stockQtyVal <= 0;
               const isLowStock = stockQtyVal > 0 && stockQtyVal <= 4;
@@ -1289,21 +1255,19 @@ export default function PricesPage({
       </div>
 
       {/* Pagination Controls */}
-      {pager && pager.loaded && (
+      {consolidatedItems.length > 0 && (
         <Pagination
-          meta={
-            selectedCategory || categoryType
-              ? {
-                  ...pager,
-                  total: consolidatedItems.length,
-                  totalProducts: consolidatedItems.length,
-                  totalPages: Math.max(1, Math.ceil(consolidatedItems.length / (pager.limit || 50))),
-                }
-              : pager
-          }
+          meta={{
+            page: activePage,
+            limit: activePageSize,
+            total: totalItemsCount,
+            totalProducts: totalItemsCount,
+            totalPages: totalPagesCount,
+            loaded: true,
+          }}
           loading={loading}
-          onPageChange={onPageChange}
-          onPageSizeChange={onPageSizeChange}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
           pageSizeOptions={[25, 50, 100]}
           totalLabel="products"
         />
