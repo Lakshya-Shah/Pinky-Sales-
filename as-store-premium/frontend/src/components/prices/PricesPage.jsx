@@ -15,13 +15,96 @@ import {
   RotateCcw,
   Tag,
   Truck,
-  Calculator
+  Calculator,
+  Boxes,
+  Smartphone,
+  BatteryCharging,
+  Camera,
+  Volume2,
+  Zap,
+  Layers
 } from 'lucide-react';
 import ExpandableText from '../shared/ExpandableText';
 import ProductThumbnail from '../ui/ProductThumbnail';
 import Pagination from '../ui/Pagination';
 import { calculateConsolidatedProduct, consolidateProductList } from '../../utils/productConsolidation';
 import CostWithBatchHistory from './CostWithBatchHistory';
+
+const quickCategories = [
+  { id: '', label: 'All Items', icon: Boxes },
+  { id: 'Display', label: 'Displays', icon: Smartphone },
+  { id: 'Battery', label: 'Batteries', icon: BatteryCharging },
+  { id: 'Camera', label: 'Cameras', icon: Camera },
+  { id: 'Speaker', label: 'Speakers', icon: Volume2 },
+  { id: 'Charging Port', label: 'Charging Flex', icon: Zap },
+  { id: 'Housing', label: 'Housing & Glass', icon: Layers },
+];
+
+const isProductMatchingCategory = (product, catId) => {
+  if (!catId) return true;
+  const cat = String(product?.part_category || product?.part_category_name || product?.category || '').trim().toLowerCase();
+  const name = String(product?.short_name || product?.name || '').toLowerCase();
+  
+  if (catId === 'Battery') {
+    return cat.includes('battery') || 
+           cat.includes('batt') || 
+           name.includes('battery') || 
+           name.includes('batt.') || 
+           name.includes('batt ') || 
+           name.endsWith('batt') ||
+           /\bbt\b/i.test(name) ||
+           /bt\s*\(/i.test(name) ||
+           /bt\s*$/i.test(name);
+  }
+  if (catId === 'Display') {
+    return cat.includes('display') || 
+           cat.includes('combo') || 
+           cat.includes('screen') || 
+           cat.includes('folder') || 
+           cat.includes('touch') || 
+           cat.includes('glass') || 
+           name.includes('combo') || 
+           name.includes('folder') || 
+           name.includes('display');
+  }
+  if (catId === 'Camera') {
+    return cat.includes('camera') || 
+           cat.includes('cam') || 
+           name.includes('camera') || 
+           name.includes('cam ') ||
+           name.includes('cam(');
+  }
+  if (catId === 'Speaker') {
+    return cat.includes('speaker') || 
+           cat.includes('ringer') || 
+           cat.includes('mic') || 
+           cat.includes('buzzer') || 
+           cat.includes('earpiece') || 
+           name.includes('speaker') || 
+           name.includes('ringer') || 
+           name.includes('buzzer');
+  }
+  if (catId === 'Charging Port') {
+    return cat.includes('charging') || 
+           cat.includes('flex') || 
+           cat.includes('sub board') || 
+           cat.includes('cc board') || 
+           name.includes('charging') || 
+           name.includes('flex') || 
+           name.includes('cc board');
+  }
+  if (catId === 'Housing') {
+    return cat.includes('housing') || 
+           cat.includes('body') || 
+           cat.includes('back glass') || 
+           cat.includes('middle') || 
+           cat.includes('frame') || 
+           name.includes('housing') || 
+           name.includes('back glass') || 
+           name.includes('frame');
+  }
+  return cat.includes(catId.toLowerCase());
+};
 
 function getProductStockCount(product) {
   if (!product) return 0;
@@ -84,6 +167,13 @@ export default function PricesPage({
   onOpenAddToolSpare,
 }) {
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(categoryType === 'battery' ? 'Battery' : '');
+
+  useEffect(() => {
+    if (categoryType === 'battery') {
+      setSelectedCategory('Battery');
+    }
+  }, [categoryType]);
 
   // Local immediate input state for 0ms typing response + debounced propagation to parent fetcher
   const [localSearch, setLocalSearch] = useState(search);
@@ -125,7 +215,39 @@ export default function PricesPage({
       });
     }
 
-    const enhancedItems = items.map((item) => {
+    // Blend incoming items with any matching stock items
+    const pool = new Map();
+    (items || []).forEach((item) => {
+      const pId = String(item.product_id || item.id || '');
+      if (pId) pool.set(pId, item);
+    });
+
+    // If stock contains items that match the category or aren't in incoming items, include them
+    if (Array.isArray(stock) && stock.length > 0) {
+      stock.forEach((s) => {
+        const pId = String(s.product_id || s.id || '');
+        if (pId && !pool.has(pId)) {
+          pool.set(pId, {
+            ...s,
+            id: Number(pId),
+            product_id: Number(pId),
+            name: s.name || s.short_name,
+            short_name: s.short_name || s.name,
+            category: s.category,
+            part_category: s.part_category || s.category,
+            brand: s.brand,
+            brand_name: s.brand_name || s.brand,
+            wholesale_price: s.wholesale_price,
+            sale_price: s.sale_price ?? s.retail_price,
+            retail_price: s.retail_price ?? s.sale_price,
+            purchase_price: s.purchase_price,
+            avg_cost_price: s.avg_cost_price ?? s.purchase_price,
+          });
+        }
+      });
+    }
+
+    const enhancedItems = Array.from(pool.values()).map((item) => {
       const pId = String(item.product_id || item.id || '');
       const liveStockQty = stockMap.get(pId);
       if (liveStockQty !== undefined && liveStockQty > 0) {
@@ -142,7 +264,12 @@ export default function PricesPage({
       return item;
     });
 
-    const consolidated = consolidateProductList(enhancedItems);
+    let consolidated = consolidateProductList(enhancedItems);
+
+    // Apply Quick Category Filter if selected
+    if (selectedCategory) {
+      consolidated = consolidated.filter((product) => isProductMatchingCategory(product, selectedCategory));
+    }
 
     const query = String(search || '').trim();
     if (!query) return consolidated;
@@ -187,7 +314,7 @@ export default function PricesPage({
       // Match if EVERY typed token is present in the haystack
       return tokens.every((token) => searchableHaystack.includes(token));
     });
-  }, [items, stock, search]);
+  }, [items, stock, search, selectedCategory]);
 
   // Quick Stock Modal State
   const [stockProduct, setStockProduct] = useState(null);
@@ -559,6 +686,25 @@ export default function PricesPage({
         </div>
       </div>
 
+      {/* Quick Category Chips Row */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none my-1">
+        {quickCategories.map((cat) => {
+          const Icon = cat.icon;
+          const isActive = (!cat.id && !selectedCategory) || (cat.id && selectedCategory.toLowerCase() === cat.id.toLowerCase());
+          return (
+            <button
+              key={cat.id || 'all'}
+              type="button"
+              onClick={() => setSelectedCategory(isActive && cat.id ? '' : cat.id)}
+              className={`category-chip ${isActive ? 'active' : ''}`}
+            >
+              <Icon size={13} />
+              <span>{cat.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Main Stock & Price Table View */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
         {loading ? (
@@ -872,7 +1018,16 @@ export default function PricesPage({
       {/* Pagination Controls */}
       {pager && pager.loaded && (
         <Pagination
-          meta={pager}
+          meta={
+            selectedCategory || categoryType
+              ? {
+                  ...pager,
+                  total: consolidatedItems.length,
+                  totalProducts: consolidatedItems.length,
+                  totalPages: Math.max(1, Math.ceil(consolidatedItems.length / (pager.limit || 50))),
+                }
+              : pager
+          }
           loading={loading}
           onPageChange={onPageChange}
           onPageSizeChange={onPageSizeChange}

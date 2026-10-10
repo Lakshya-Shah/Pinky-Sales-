@@ -588,7 +588,10 @@ const isBatteryCategory = (p) => {
          name.includes('battery') || 
          name.includes('batt.') || 
          name.includes('batt ') || 
-         name.endsWith('batt');
+         name.endsWith('batt') ||
+         /\bbt\b/i.test(name) ||
+         /bt\s*\(/i.test(name) ||
+         /bt\s*$/i.test(name);
 };
 
 const isSparesCategory = (p) => {
@@ -7752,7 +7755,45 @@ function App() {
     return productPageItems || [];
   }, [role, data.catalog, productPageItems, deferredPriceSearch]);
 
-  const allCategoryPool = role === 'customer' ? data.catalog : (data.products || []);
+  const allCategoryPool = useMemo(() => {
+    if (role === 'customer') return data.catalog || [];
+    const pool = new Map();
+    (data.products || []).forEach((p) => {
+      const id = String(p.id || p.product_id || '');
+      if (id) pool.set(id, p);
+    });
+    (data.productResults || []).forEach((p) => {
+      const id = String(p.id || p.product_id || '');
+      if (id) pool.set(id, { ...(pool.get(id) || {}), ...p });
+    });
+    (data.stock || []).forEach((s) => {
+      const id = String(s.product_id || s.id || '');
+      if (id) {
+        const existing = pool.get(id) || {};
+        pool.set(id, {
+          ...s,
+          ...existing,
+          id: existing.id || Number(id),
+          product_id: Number(id),
+          name: existing.name || s.name || s.short_name,
+          short_name: existing.short_name || s.short_name || s.name,
+          category: existing.category || s.category,
+          part_category: existing.part_category || s.part_category || s.category,
+          brand: existing.brand || s.brand,
+          brand_name: existing.brand_name || s.brand_name || s.brand,
+          wholesale_price: existing.wholesale_price ?? s.wholesale_price,
+          sale_price: existing.sale_price ?? s.sale_price ?? s.retail_price,
+          retail_price: existing.retail_price ?? s.retail_price ?? s.sale_price,
+          purchase_price: existing.purchase_price ?? s.purchase_price,
+          avg_cost_price: existing.avg_cost_price ?? s.avg_cost_price ?? s.purchase_price,
+          warehouse_stock: s.quantity ?? s.warehouse_stock ?? existing.warehouse_stock,
+          available_stock: s.quantity ?? s.available_stock ?? existing.available_stock,
+          quantity: s.quantity ?? existing.quantity,
+        });
+      }
+    });
+    return Array.from(pool.values());
+  }, [role, data.catalog, data.products, data.productResults, data.stock]);
 
   const toolsItems = useMemo(() => {
     return allCategoryPool.filter((item) => {
@@ -9054,9 +9095,12 @@ function App() {
                 showToast={showToast}
                 saving={saving}
                 items={batteryItems}
-                search={batterySearch}
-                pager={productPager}
-                loading={productPageLoading}
+                pager={{
+                  ...productPager,
+                  total: batteryItems.length,
+                  totalProducts: batteryItems.length,
+                  totalPages: Math.max(1, Math.ceil(batteryItems.length / (productPager.limit || 50))),
+                }}
                 onExportProducts={(exportItems) => exportExcel('battery', {}, exportItems || batteryItems)}
                 onSearchChange={(value) => setBatterySearch(value)}
                 onViewDetails={setSelectedProductDetails}

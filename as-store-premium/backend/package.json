@@ -11,7 +11,8 @@
     "migrate": "node migrate.js",
     "seed:mock-stock": "node scripts/seed-mock-stock.js",
     "audit:jagdish": "node scripts/audit_jagdish_now.js",
-    "fix:jagdish": "node scripts/fix_jagdish_accounting.js"
+    "fix:jagdish": "node scripts/fix_jagdish_accounting.js",
+    "remove:cn-ramdev": "node scripts/remove_credit_note_ramdev.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",

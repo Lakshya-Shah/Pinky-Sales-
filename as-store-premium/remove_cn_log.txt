@@ -1,0 +1,47 @@
+================================================================
+   REMOVING CREDIT NOTE CN-000090 (₹8,400) FROM RAMDEV VAPI     
+================================================================
+
+Found Customer: RAMDEV MOBILE  VAPI (ID: 89, Mobile: 9898068887)
+Found Credit Note: #CN-000090 (ID: 90, Amount: ₹8,400.00, Status: active)
+Found 1 returned item(s) on credit note:
+ - Product ID: 440, Qty: 3, Restocked: true
+   Deducting 3 qty from batch ID 603...
+5. Deleting sales return items for credit note #CN-000090...
+6. Deleting credit note #CN-000090...
+   ✔ Credit note deleted cleanly from database!
+
+7. Recalculating Customer RAMDEV MOBILE VAPI balances...
+
+New Balance Breakdown for RAMDEV MOBILE  VAPI:
+ - Opening Balance:    ₹51,020.00
+ - Total Invoiced:     ₹17,150.00
+ - Total Payments:     ₹30,000.00
+ - Total Credit Notes: ₹17,400.00
+ - Net Balance:        ₹20,770.00 (Dr)
+ - Advance Balance:    ₹0.00
+
+✔ Database transaction committed successfully!
+
+================================================================
+   VERIFYING RAMDEV MOBILE VAPI LEDGER AFTER REMOVAL:           
+================================================================
+Customer:              RAMDEV MOBILE  VAPI (ID 89)
+Opening Balance:       ₹51,020.00
+Total Invoiced:        ₹17,150.00
+Total Paid:            ₹30,000.00
+Total Credit Notes:    ₹17,400.00
+Invoices Pending:      ₹17,150.00
+Advance Balance:       ₹0.00
+Total Outstanding:     ₹20,770.00
+Ledger Closing Bal:    ₹20,770.00
+
+Party Ledger Rows:
+  2026-09-18 | OB-000089 | opening_balance | Dr: ₹51,020.00 | Cr: ₹0.00 | Bal: ₹51,020.00
+  2026-09-22 | PAY-000369 | payment | Dr: ₹0.00 | Cr: ₹30,000.00 | Bal: ₹21,020.00
+  2026-09-26 | CN-000069 | credit_note | Dr: ₹0.00 | Cr: ₹17,400.00 | Bal: ₹3,620.00
+  2026-10-07 | INV-000632 | sale | Dr: ₹17,150.00 | Cr: ₹0.00 | Bal: ₹20,770.00
+
+================================================================
+✅ CREDIT NOTE CN-000090 REMOVED SUCCESSFULLY!
+================================================================
