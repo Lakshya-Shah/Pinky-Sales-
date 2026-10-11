@@ -5601,6 +5601,40 @@ app.post(['/api/credit-notes', '/credit-notes'], authenticateToken, requireShopS
   }
 });
 
+app.put(['/api/credit-notes/:id', '/credit-notes/:id'], authenticateToken, requireShopStaff, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Valid credit note ID is required.' });
+    const { amount, return_date, reason } = req.body;
+
+    const result = await runTransaction(async (tx) => {
+      const cn = await tx.getRecord('SELECT * FROM credit_notes WHERE id = ? FOR UPDATE', [id]);
+      if (!cn) throw Object.assign(new Error('Credit note not found.'), { status: 404 });
+      if (cn.status === 'cancelled') throw Object.assign(new Error('Cannot edit a cancelled credit note.'), { status: 400 });
+
+      const newAmount = amount !== undefined ? money(Number(amount)) : Number(cn.amount);
+      if (newAmount <= 0) throw Object.assign(new Error('Credit note amount must be greater than zero.'), { status: 400 });
+
+      const newDate = /^\d{4}-\d{2}-\d{2}$/.test(String(return_date || '')) ? String(return_date) : String(cn.return_date || today()).slice(0, 10);
+      const newReason = reason !== undefined ? String(reason).trim() : (cn.reason || '');
+
+      await tx.runQuery(
+        `UPDATE credit_notes 
+         SET amount = ?, return_date = ?, reason = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [newAmount, newDate, newReason, id]
+      );
+
+      return { ...cn, amount: newAmount, return_date: newDate, reason: newReason };
+    });
+
+    await audit(req, 'Updated credit note', 'credit_note', id, `${result.credit_note_number}, amount ₹${result.amount}`);
+    res.json({ success: true, message: `Credit Note ${result.credit_note_number} updated successfully.`, credit_note: result });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || 'Failed to update credit note.' });
+  }
+});
+
 const resolveSafePurchasePrice = (batches, saleQuantity, masterProductCost, unitPrice) => {
   const masterCost = Number(masterProductCost || 0);
   const sellingPrice = Number(unitPrice || 0);
@@ -7865,6 +7899,220 @@ app.post('/api/payments/:id/reverse', authenticateToken, requireShopStaff, async
     return res.json({ success: true, ...result });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to reverse payment.' });
+  }
+});
+
+// Update Customer Payment (Amount, Date, Mode, Reference, Notes) with FIFO allocation re-sync
+app.put('/api/payments/:id', authenticateToken, requireShopStaff, async (req, res) => {
+  const paymentId = Number(req.params.id);
+  if (!Number.isInteger(paymentId) || paymentId <= 0) {
+    return res.status(400).json({ error: 'Valid payment ID is required.' });
+  }
+
+  const { amount, payment_date, payment_mode, reference_number, note } = req.body;
+
+  try {
+    const result = await runTransaction(async (tx) => {
+      // 1. Lock payment row
+      const payment = await tx.getRecord('SELECT * FROM payments WHERE id = ? FOR UPDATE', [paymentId]);
+      if (!payment) throw Object.assign(new Error('Payment not found.'), { status: 404 });
+      if (payment.reversed_at) throw Object.assign(new Error('Cannot edit a reversed payment.'), { status: 400 });
+
+      const targetCustomerId = payment.customer_id;
+      // 2. Lock customer row
+      const customer = await tx.getRecord(
+        `SELECT id, name, mobile, COALESCE(opening_balance, 0) AS opening_balance, 
+                COALESCE(advance_balance, 0) AS advance_balance, shop_id
+         FROM customers WHERE id = ? FOR UPDATE`,
+        [targetCustomerId]
+      );
+      if (!customer) throw Object.assign(new Error('Customer not found.'), { status: 404 });
+
+      const newAmount = amount !== undefined ? money(Number(amount)) : money(Number(payment.amount));
+      if (newAmount <= 0) throw Object.assign(new Error('Payment amount must be greater than zero.'), { status: 400 });
+
+      const newDate = /^\d{4}-\d{2}-\d{2}$/.test(String(payment_date || '')) ? String(payment_date) : String(payment.payment_date || today()).slice(0, 10);
+      const newMode = payment_mode !== undefined ? String(payment_mode).trim() : (payment.payment_mode || 'cash');
+      const newRef = reference_number !== undefined ? (String(reference_number).trim() || null) : payment.reference_number;
+      const newNote = note !== undefined ? (String(note).trim() || null) : payment.note;
+
+      const isAmountChanged = Math.abs(newAmount - money(Number(payment.amount))) > 0.005;
+
+      let remainingPayment = newAmount;
+
+      if (isAmountChanged) {
+        // Step A: Rollback existing active allocations for this payment
+        const oldAllocations = await tx.allRecords(
+          'SELECT * FROM payment_allocations WHERE payment_id = ? AND reversed_at IS NULL',
+          [paymentId]
+        );
+
+        for (const alloc of oldAllocations) {
+          if (alloc.allocation_type === 'invoice' && alloc.sale_id) {
+            const invoice = await tx.getRecord('SELECT * FROM sales WHERE id = ? FOR UPDATE', [alloc.sale_id]);
+            if (invoice) {
+              const restoredPaid = Math.max(0, money(Number(invoice.paid_amount) - Number(alloc.amount_applied)));
+              const restoredPending = Math.max(0, money(Number(invoice.total_amount) - restoredPaid));
+              const restoredStatus = restoredPaid <= 0 ? 'open' : (restoredPaid < Number(invoice.total_amount) ? 'partial' : 'paid');
+              await tx.runQuery(
+                'UPDATE sales SET paid_amount = ?, pending_amount = ?, status = ? WHERE id = ?',
+                [restoredPaid, restoredPending, restoredStatus, invoice.id]
+              );
+            }
+          }
+        }
+
+        // Deduct prior unallocated advance from customer
+        if (Number(payment.unallocated_amount) > 0) {
+          const priorExcess = money(Number(payment.unallocated_amount));
+          await tx.runQuery(
+            'UPDATE customers SET advance_balance = GREATEST(0, COALESCE(advance_balance, 0) - ?) WHERE id = ?',
+            [priorExcess, customer.id]
+          );
+        }
+
+        // Delete old allocations
+        await tx.runQuery('DELETE FROM payment_allocations WHERE payment_id = ?', [paymentId]);
+
+        // Step B: Re-allocate with the new amount using FIFO engine
+        const allocationsToInsert = [];
+
+        // If payment originally targeted a specific sale_id
+        if (payment.sale_id) {
+          const targetSale = await tx.getRecord('SELECT * FROM sales WHERE id = ? FOR UPDATE', [payment.sale_id]);
+          if (targetSale && Number(targetSale.pending_amount) > 0) {
+            const invDue = money(targetSale.pending_amount);
+            const allocSale = Math.min(remainingPayment, invDue);
+            const newPaid = money(Number(targetSale.paid_amount) + allocSale);
+            const newPending = Math.max(0, money(Number(targetSale.total_amount) - newPaid));
+            const newStatus = newPending <= 0 ? 'paid' : (newPaid > 0 ? 'partial' : 'open');
+
+            await tx.runQuery(
+              'UPDATE sales SET paid_amount = ?, pending_amount = ?, status = ? WHERE id = ?',
+              [newPaid, newPending, newStatus, targetSale.id]
+            );
+
+            allocationsToInsert.push({
+              sale_id: targetSale.id,
+              allocation_type: 'invoice',
+              amount_applied: allocSale,
+              notes: `Allocated to Invoice #${targetSale.invoice_number || targetSale.id}`,
+            });
+            remainingPayment = money(remainingPayment - allocSale);
+          }
+        }
+
+        // Allocate to unsettled opening balance
+        if (remainingPayment > 0) {
+          const settledOBRow = await tx.getRecord(
+            `SELECT COALESCE(SUM(amount_applied), 0) AS settled
+             FROM payment_allocations
+             WHERE customer_id = ? AND allocation_type = 'opening_balance' AND reversed_at IS NULL`,
+            [targetCustomerId]
+          );
+          const unsettledOB = Math.max(0, money(Number(customer.opening_balance) - Number(settledOBRow?.settled || 0)));
+          if (unsettledOB > 0) {
+            const allocOB = Math.min(remainingPayment, unsettledOB);
+            allocationsToInsert.push({
+              sale_id: null,
+              allocation_type: 'opening_balance',
+              amount_applied: allocOB,
+              notes: 'Applied towards Opening Balance',
+            });
+            remainingPayment = money(remainingPayment - allocOB);
+          }
+        }
+
+        // Allocate to unpaid invoices in FIFO order
+        if (remainingPayment > 0) {
+          const unpaidSales = await tx.allRecords(
+            `SELECT * FROM sales 
+             WHERE customer_id = ? AND pending_amount > 0 AND (status != 'paid' OR status IS NULL)
+             ORDER BY COALESCE(invoice_date, sale_date::date, created_at::date) ASC, id ASC
+             FOR UPDATE`,
+            [targetCustomerId]
+          );
+
+          for (const s of unpaidSales) {
+            if (remainingPayment <= 0) break;
+            if (payment.sale_id && Number(s.id) === Number(payment.sale_id)) continue;
+
+            const invDue = money(s.pending_amount);
+            if (invDue <= 0) continue;
+
+            const allocInv = Math.min(remainingPayment, invDue);
+            const newPaid = money(Number(s.paid_amount) + allocInv);
+            const newPending = Math.max(0, money(Number(s.total_amount) - newPaid));
+            const newStatus = newPending <= 0 ? 'paid' : (newPaid > 0 ? 'partial' : 'open');
+
+            await tx.runQuery(
+              'UPDATE sales SET paid_amount = ?, pending_amount = ?, status = ? WHERE id = ?',
+              [newPaid, newPending, newStatus, s.id]
+            );
+
+            allocationsToInsert.push({
+              sale_id: s.id,
+              allocation_type: 'invoice',
+              amount_applied: allocInv,
+              notes: `Allocated to Invoice #${s.invoice_number || s.id}`,
+            });
+            remainingPayment = money(remainingPayment - allocInv);
+          }
+        }
+
+        // Excess becomes unallocated advance credit
+        if (remainingPayment > 0) {
+          await tx.runQuery(
+            'UPDATE customers SET advance_balance = COALESCE(advance_balance, 0) + ? WHERE id = ?',
+            [remainingPayment, targetCustomerId]
+          );
+        }
+
+        // Insert new allocations
+        for (const alloc of allocationsToInsert) {
+          await tx.runQuery(
+            `INSERT INTO payment_allocations (payment_id, customer_id, sale_id, allocation_type, amount_applied, notes)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [paymentId, targetCustomerId, alloc.sale_id, alloc.allocation_type, alloc.amount_applied, alloc.notes]
+          );
+        }
+      }
+
+      // Step C: Update payments row
+      await tx.runQuery(
+        `UPDATE payments 
+         SET amount = ?, payment_date = ?, payment_mode = ?, reference_number = ?, note = ?, 
+             unallocated_amount = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [newAmount, newDate, newMode, newRef, newNote, remainingPayment, paymentId]
+      );
+
+      // Recompute and persist current_balance for customer
+      const custNetRow = await tx.getRecord(
+        `SELECT (
+           GREATEST(0, (COALESCE(c.opening_balance, 0) - COALESCE(
+             (SELECT SUM(pa.amount_applied) FROM payment_allocations pa 
+              WHERE pa.customer_id = c.id AND pa.allocation_type = 'opening_balance' AND pa.reversed_at IS NULL), 0
+           )))
+           + COALESCE((SELECT SUM(s.pending_amount) FROM sales s WHERE s.customer_id = c.id), 0)
+           - COALESCE(c.advance_balance, 0)
+         ) AS total_pending
+         FROM customers c WHERE c.id = ?`,
+        [targetCustomerId]
+      );
+      if (custNetRow) {
+        const netBal = money(custNetRow.total_pending || 0);
+        await tx.runQuery('UPDATE customers SET current_balance = ? WHERE id = ?', [netBal, targetCustomerId]);
+      }
+
+      const updatedPayment = await tx.getRecord('SELECT * FROM payments WHERE id = ?', [paymentId]);
+      return updatedPayment;
+    });
+
+    await audit(req, 'Updated customer payment', 'payment', paymentId, `Updated payment ${result.payment_number || paymentId} to ₹${result.amount}`);
+    return res.json({ success: true, message: `Payment ${result.payment_number || paymentId} updated successfully.`, payment: result });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to update payment.' });
   }
 });
 

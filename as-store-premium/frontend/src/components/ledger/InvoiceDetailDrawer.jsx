@@ -23,6 +23,7 @@ import {
   Layers,
   ArrowDownLeft,
   TrendingUp,
+  Edit3,
 } from 'lucide-react';
 import {
   generateInvoicePDFDoc,
@@ -42,6 +43,7 @@ export default function InvoiceDetailDrawer({
   customer: propCustomer = null,
   shopId = null,
   setGlobalToast,
+  onEditInvoice,
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -238,6 +240,20 @@ export default function InvoiceDetailDrawer({
               <div className="flex items-center gap-2">
                 {sale && (
                   <>
+                    {onEditInvoice && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onEditInvoice(sale);
+                          onClose();
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-sky-300 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold shadow-sm transition-all cursor-pointer"
+                        title="Edit Invoice Numbers & Details"
+                      >
+                        <Edit3 size={13} />
+                        <span>Edit</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleDownloadPDF}

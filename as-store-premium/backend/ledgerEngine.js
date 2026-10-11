@@ -503,6 +503,7 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
   const sqlQuery = `
     WITH ledger_rows AS (
       SELECT
+        s.id                                                               AS id,
         COALESCE(s.opening_balance_date, s.created_at::date, CURRENT_DATE) AS entry_date,
         'OB-' || LPAD(s.id::text, 6, '0')                                 AS ref_no,
         'opening_balance'                                                  AS entry_type,
@@ -515,6 +516,7 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
       UNION ALL
 
       SELECT
+        pb.id                     AS id,
         pb.bill_date              AS entry_date,
         pb.bill_number            AS ref_no,
         'purchase_bill'           AS entry_type,
@@ -527,6 +529,7 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
       UNION ALL
 
       SELECT
+        pb.id                     AS id,
         pb.bill_date              AS entry_date,
         pb.bill_number            AS ref_no,
         'bill_payment'            AS entry_type,
@@ -539,6 +542,7 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
       UNION ALL
 
       SELECT
+        dn.id                     AS id,
         dn.return_date            AS entry_date,
         dn.debit_note_number      AS ref_no,
         'debit_note'              AS entry_type,
@@ -550,7 +554,7 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
     ),
     ordered AS (
       SELECT
-        entry_date, ref_no, entry_type, description,
+        id, entry_date, ref_no, entry_type, description,
         ROUND(debit_amount::numeric, 2)  AS debit,
         ROUND(credit_amount::numeric, 2) AS credit,
         ROUND(
@@ -572,6 +576,7 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
   params.push(supplierId); if (shopId) params.push(shopId);  // debit_notes
 
   const allRows = (await allRecords(sqlQuery, params)).map(r => ({
+    id:              r.id,
     entry_date:      toDateKey(r.entry_date),
     ref_no:          r.ref_no,
     entry_type:      r.entry_type,

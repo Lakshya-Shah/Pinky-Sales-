@@ -8857,6 +8857,7 @@ function App() {
                 setGlobalToast={showToast}
                 customers={data.customers || []}
                 suppliers={data.reference?.suppliers || []}
+                onEditSale={openEditSaleModal}
               />
             </PageWrapper>
           )}
@@ -11116,6 +11117,7 @@ function App() {
             formatDateDMY={formatDateDMY}
             onStartFullEdit={startEditSale}
             onSuccess={async (updatedSale) => {
+              window.dispatchEvent(new CustomEvent('party-ledger-refresh'));
               await loadTab(active, shopId);
               if (selectedPaymentCustomer) {
                 const updatedCust = (data.customers || []).find((c) => String(c.id) === String(selectedPaymentCustomer.customer_id || selectedPaymentCustomer.id));
