@@ -5635,6 +5635,95 @@ app.put(['/api/credit-notes/:id', '/credit-notes/:id'], authenticateToken, requi
   }
 });
 
+// Delete Credit Note with stock/redemption rollback and balance re-sync
+app.delete(['/api/credit-notes/:id', '/credit-notes/:id'], authenticateToken, requireShopStaff, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Valid credit note ID is required.' });
+
+    const result = await runTransaction(async (tx) => {
+      const cn = await tx.getRecord('SELECT * FROM credit_notes WHERE id = ? FOR UPDATE', [id]);
+      if (!cn) throw Object.assign(new Error('Credit note not found.'), { status: 404 });
+      if (cn.shop_id) {
+        requireScopedShopId(req, cn.shop_id);
+      }
+
+      // 1. Reverse redemptions against sales
+      const redemptions = await tx.allRecords(
+        'SELECT id, sale_id, amount FROM credit_note_redemptions WHERE credit_note_id = ?',
+        [cn.id]
+      ).catch(() => []);
+      for (const r of redemptions) {
+        const rAmt = Number(r.amount || 0);
+        if (rAmt > 0) {
+          await tx.runQuery(
+            `UPDATE sales 
+             SET applied_credit_amount = GREATEST(0, applied_credit_amount - ?),
+                 pending_amount = pending_amount + ?,
+                 status = 'open'
+             WHERE id = ?`,
+            [rAmt, rAmt, r.sale_id]
+          );
+        }
+      }
+      await tx.runQuery('DELETE FROM credit_note_redemptions WHERE credit_note_id = ?', [cn.id]).catch(() => {});
+
+      // 2. Reverse restocked inventory on sales_returns
+      const returnItems = await tx.allRecords(
+        'SELECT id, product_id, quantity, restock_inventory, shop_id FROM sales_returns WHERE credit_note_id = ?',
+        [cn.id]
+      ).catch(() => []);
+      for (const item of returnItems) {
+        if (item.restock_inventory) {
+          const retBatch = await tx.getRecord(
+            'SELECT id FROM inventory_batches WHERE product_id = ? ORDER BY id DESC LIMIT 1',
+            [item.product_id]
+          );
+          if (retBatch) {
+            await tx.runQuery(
+              'UPDATE inventory_batches SET quantity_remaining = GREATEST(0, quantity_remaining - ?) WHERE id = ?',
+              [item.quantity, retBatch.id]
+            );
+          }
+        }
+      }
+      await tx.runQuery('DELETE FROM sales_returns WHERE credit_note_id = ?', [cn.id]).catch(() => {});
+
+      // 3. Delete credit note
+      await tx.runQuery('DELETE FROM credit_notes WHERE id = ?', [cn.id]);
+
+      // 4. Clean up any ledger_entries if present
+      await tx.runQuery('DELETE FROM ledger_entries WHERE ref_no = ? AND customer_id = ?', [cn.credit_note_number, cn.customer_id]).catch(() => {});
+
+      // 5. Recompute customer balances
+      await tx.runQuery(
+        `UPDATE customers c
+         SET current_balance = (
+           COALESCE(c.opening_balance, 0)
+           + COALESCE((SELECT SUM(COALESCE(NULLIF(s.current_invoice_total, 0), s.total_amount)) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')), 0)
+           - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
+           - COALESCE((SELECT SUM(cn2.amount) FROM credit_notes cn2 WHERE cn2.customer_id = c.id AND cn2.status != 'cancelled'), 0)
+         )
+         WHERE c.id = ?`,
+        [cn.customer_id]
+      );
+      await tx.runQuery(
+        `UPDATE customers
+         SET advance_balance = CASE WHEN current_balance < 0 THEN ABS(current_balance) ELSE 0 END
+         WHERE id = ?`,
+        [cn.customer_id]
+      );
+
+      return cn;
+    });
+
+    await audit(req, 'Deleted credit note', 'credit_note', id, `${result.credit_note_number}, amount ₹${result.amount}`);
+    res.json({ success: true, message: `Credit Note ${result.credit_note_number} deleted successfully.` });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || 'Failed to delete credit note.' });
+  }
+});
+
 const resolveSafePurchasePrice = (batches, saleQuantity, masterProductCost, unitPrice) => {
   const masterCost = Number(masterProductCost || 0);
   const sellingPrice = Number(unitPrice || 0);
@@ -6718,7 +6807,7 @@ const handleUpdateSale = async (req, res) => {
 app.put('/api/sales/:id', authenticateToken, requireShopStaff, handleUpdateSale);
 app.patch('/api/sales/:id', authenticateToken, requireShopStaff, handleUpdateSale);
 
-app.delete('/api/sales/:id', authenticateToken, requireShopStaff, async (req, res) => {
+app.delete(['/api/sales/:id', '/sales/:id'], authenticateToken, requireShopStaff, async (req, res) => {
   try {
     const saleId = Number(req.params.id);
     if (!Number.isInteger(saleId) || saleId <= 0) return res.status(400).json({ error: 'Choose a valid sale.' });
@@ -8113,6 +8202,105 @@ app.put('/api/payments/:id', authenticateToken, requireShopStaff, async (req, re
     return res.json({ success: true, message: `Payment ${result.payment_number || paymentId} updated successfully.`, payment: result });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to update payment.' });
+  }
+});
+
+// Delete Customer Payment with FIFO allocation rollback and balance re-sync
+app.delete(['/api/payments/:id', '/payments/:id'], authenticateToken, requireShopStaff, async (req, res) => {
+  const paymentId = Number(req.params.id);
+  if (!Number.isInteger(paymentId) || paymentId <= 0) {
+    return res.status(400).json({ error: 'Valid payment ID is required.' });
+  }
+
+  try {
+    const result = await runTransaction(async (tx) => {
+      // 1. Lock payment row
+      const payment = await tx.getRecord('SELECT * FROM payments WHERE id = ? FOR UPDATE', [paymentId]);
+      if (!payment) throw Object.assign(new Error('Payment not found.'), { status: 404 });
+
+      const targetCustomerId = payment.customer_id;
+      // 2. Lock customer row
+      const customer = await tx.getRecord(
+        `SELECT id, name, COALESCE(opening_balance, 0) AS opening_balance, 
+                COALESCE(advance_balance, 0) AS advance_balance, shop_id
+         FROM customers WHERE id = ? FOR UPDATE`,
+        [targetCustomerId]
+      );
+      if (!customer) throw Object.assign(new Error('Customer not found.'), { status: 404 });
+
+      if (payment.shop_id) {
+        requireScopedShopId(req, payment.shop_id);
+      }
+
+      // 3. Rollback active allocations for this payment
+      const oldAllocations = await tx.allRecords(
+        'SELECT * FROM payment_allocations WHERE payment_id = ? AND reversed_at IS NULL',
+        [paymentId]
+      );
+
+      for (const alloc of oldAllocations) {
+        if (alloc.allocation_type === 'invoice' && alloc.sale_id) {
+          const inv = await tx.getRecord('SELECT * FROM sales WHERE id = ? FOR UPDATE', [alloc.sale_id]);
+          if (inv) {
+            const restoredPaid = Math.max(0, money(Number(inv.paid_amount) - Number(alloc.amount_applied)));
+            const invTotal = money(inv.current_invoice_total) || money(inv.total_amount);
+            const restoredPending = Math.max(0, money(invTotal - restoredPaid));
+            const restoredStatus = restoredPaid <= 0 ? 'open' : (restoredPaid < invTotal ? 'partial' : 'paid');
+
+            await tx.runQuery(
+              'UPDATE sales SET paid_amount = ?, pending_amount = ?, status = ? WHERE id = ?',
+              [restoredPaid, restoredPending, restoredStatus, inv.id]
+            );
+          }
+        }
+      }
+
+      // 4. Reverse advance if payment had unallocated advance or advance allocations
+      const advanceAllocated = oldAllocations
+        .filter(a => a.allocation_type === 'advance')
+        .reduce((s, a) => s + Number(a.amount_applied || 0), 0);
+      const excess = Math.max(Number(payment.unallocated_amount || 0), advanceAllocated);
+      if (excess > 0) {
+        await tx.runQuery(
+          'UPDATE customers SET advance_balance = GREATEST(0, COALESCE(advance_balance, 0) - ?) WHERE id = ?',
+          [money(excess), targetCustomerId]
+        );
+      }
+
+      // 5. Delete allocations and payment
+      await tx.runQuery('DELETE FROM payment_allocations WHERE payment_id = ?', [paymentId]);
+      await tx.runQuery('DELETE FROM payments WHERE id = ?', [paymentId]);
+
+      // 6. Clean up any ledger_entries if present for this ref_no
+      const paymentRef = payment.payment_number || ('PAY-' + String(paymentId).padStart(6, '0'));
+      await tx.runQuery('DELETE FROM ledger_entries WHERE ref_no = ? AND customer_id = ?', [paymentRef, targetCustomerId]).catch(() => {});
+
+      // 7. Recompute and persist current_balance and advance_balance for customer
+      await tx.runQuery(
+        `UPDATE customers c
+         SET current_balance = (
+           COALESCE(c.opening_balance, 0)
+           + COALESCE((SELECT SUM(COALESCE(NULLIF(s.current_invoice_total, 0), s.total_amount)) FROM sales s WHERE s.customer_id = c.id AND s.status NOT IN ('cancelled', 'void')), 0)
+           - COALESCE((SELECT SUM(pm.amount) FROM payments pm WHERE pm.customer_id = c.id AND pm.reversed_at IS NULL AND COALESCE(pm.payment_mode, '') NOT IN ('credit_note', 'store_credit')), 0)
+           - COALESCE((SELECT SUM(cn.amount) FROM credit_notes cn WHERE cn.customer_id = c.id AND cn.status != 'cancelled'), 0)
+         )
+         WHERE c.id = ?`,
+        [targetCustomerId]
+      );
+      await tx.runQuery(
+        `UPDATE customers
+         SET advance_balance = CASE WHEN current_balance < 0 THEN ABS(current_balance) ELSE 0 END
+         WHERE id = ?`,
+        [targetCustomerId]
+      );
+
+      return { payment_number: paymentRef, amount: payment.amount, customer_name: customer.name };
+    });
+
+    await audit(req, 'Deleted customer payment', 'payment', paymentId, `Deleted payment ${result.payment_number} of ₹${result.amount}`);
+    return res.json({ success: true, message: `Payment ${result.payment_number} deleted successfully.` });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to delete payment.' });
   }
 });
 
@@ -9540,7 +9728,7 @@ app.put('/api/purchase-bills/:id', authenticateToken, requireShopStaff, async (r
   }
 });
 
-app.delete('/api/purchase-bills/:id', authenticateToken, requireShopStaff, async (req, res) => {
+app.delete(['/api/purchase-bills/:id', '/purchase-bills/:id'], authenticateToken, requireShopStaff, async (req, res) => {
   try {
     const billId = Number(req.params.id);
     if (!Number.isInteger(billId) || billId <= 0) return res.status(400).json({ error: 'Valid bill ID required.' });
@@ -9921,7 +10109,7 @@ app.put('/api/debit-notes/:id', authenticateToken, requireShopStaff, async (req,
   }
 });
 
-app.delete('/api/debit-notes/:id', authenticateToken, requireShopStaff, async (req, res) => {
+app.delete(['/api/debit-notes/:id', '/debit-notes/:id'], authenticateToken, requireShopStaff, async (req, res) => {
   try {
     const dnId = Number(req.params.id);
     if (!Number.isInteger(dnId) || dnId <= 0) return res.status(400).json({ error: 'Valid debit note ID required.' });

@@ -4,7 +4,7 @@ import {
   BookOpen, ChevronDown, ChevronUp, Download, X, Calendar,
   TrendingUp, TrendingDown, Minus, RefreshCw, User, FileText,
   AlertCircle, ArrowUpRight, ArrowDownRight, ChevronsRight, Search,
-  Edit3, Check, Loader2
+  Edit3, Check, Loader2, Trash2, AlertTriangle
 } from 'lucide-react';
 import InvoiceDetailDrawer from './InvoiceDetailDrawer';
 
@@ -305,6 +305,11 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState(null);
 
+  // Deletion modal state for ledger transactions
+  const [deletingRow, setDeletingRow] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
   const partyList = mode === 'customer' ? customers : suppliers;
 
   const fetchLedger = useCallback(async () => {
@@ -485,6 +490,68 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
       setGlobalToast && setGlobalToast({ type: 'error', message: err.message || 'Failed to save changes.' });
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  const handleConfirmDelete = async (rowToDelete) => {
+    const row = rowToDelete || deletingRow;
+    if (!row) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const isInv = row.type === 'Invoice' || row.entry_type === 'sale' || String(row.ref_no || '').startsWith('INV-');
+
+      if (isInv) {
+        await api(`/sales/${row.id}`, { method: 'DELETE' });
+        setGlobalToast && setGlobalToast({ type: 'success', message: `Invoice ${row.ref_no} deleted successfully.` });
+      } else if (row.entry_type === 'payment') {
+        await api(`/payments/${row.id}`, { method: 'DELETE' });
+        setGlobalToast && setGlobalToast({ type: 'success', message: `Payment ${row.ref_no} deleted successfully.` });
+      } else if (row.entry_type === 'credit_note') {
+        await api(`/credit-notes/${row.id}`, { method: 'DELETE' });
+        setGlobalToast && setGlobalToast({ type: 'success', message: `Credit Note ${row.ref_no} deleted successfully.` });
+      } else if (row.entry_type === 'purchase_bill') {
+        await api(`/purchase-bills/${row.id}`, { method: 'DELETE' });
+        setGlobalToast && setGlobalToast({ type: 'success', message: `Purchase Bill ${row.ref_no} deleted successfully.` });
+      } else if (row.entry_type === 'debit_note') {
+        await api(`/debit-notes/${row.id}`, { method: 'DELETE' });
+        setGlobalToast && setGlobalToast({ type: 'success', message: `Debit Note ${row.ref_no} deleted successfully.` });
+      } else if (row.entry_type === 'opening_balance') {
+        if (mode === 'customer') {
+          await api(`/customers/${selectedId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: ledger.customer?.name,
+              opening_balance: 0,
+              opening_balance_date: row.entry_date || today(),
+            }),
+          });
+        } else {
+          await api(`/reference-data/suppliers/${selectedId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: ledger.supplier?.name,
+              opening_balance: 0,
+              opening_balance_date: row.entry_date || today(),
+            }),
+          });
+        }
+        setGlobalToast && setGlobalToast({ type: 'success', message: 'Opening balance removed successfully.' });
+      }
+
+      setDeletingRow(null);
+      if (editingRow && editingRow.id === row.id) {
+        setEditingRow(null);
+      }
+      await fetchLedger();
+    } catch (err) {
+      console.error('Failed to delete transaction:', err);
+      setDeleteError(err.message || 'Failed to delete transaction.');
+      setGlobalToast && setGlobalToast({ type: 'error', message: err.message || 'Failed to delete transaction.' });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -789,31 +856,62 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
                     {/* Action Column */}
                     <td style={{ padding: '8px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {canEdit ? (
-                        <button
-                          type="button"
-                          onClick={() => handleStartEdit(row)}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: 8,
-                            border: '1.5px solid #e0e7ff',
-                            background: '#eef2ff',
-                            color: '#4f46e5',
-                            fontSize: 12,
-                            fontWeight: 700,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            cursor: 'pointer',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                            transition: 'all 0.15s ease',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.background = '#4f46e5'; e.currentTarget.style.color = '#fff'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = '#eef2ff'; e.currentTarget.style.color = '#4f46e5'; }}
-                          title={`Edit ${row.ref_no || 'entry'} details or numbers`}
-                        >
-                          <Edit3 size={12} />
-                          <span>Edit</span>
-                        </button>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(row)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 8,
+                              border: '1.5px solid #e0e7ff',
+                              background: '#eef2ff',
+                              color: '#4f46e5',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              cursor: 'pointer',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#4f46e5'; e.currentTarget.style.color = '#fff'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = '#eef2ff'; e.currentTarget.style.color = '#4f46e5'; }}
+                            title={`Edit ${row.ref_no || 'entry'} details or numbers`}
+                          >
+                            <Edit3 size={12} />
+                            <span>Edit</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeletingRow(row);
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 8,
+                              border: '1.5px solid #fee2e2',
+                              background: '#fef2f2',
+                              color: '#dc2626',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              cursor: 'pointer',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#dc2626'; e.currentTarget.style.color = '#fff'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#dc2626'; }}
+                            title={`Delete ${row.ref_no || 'entry'}`}
+                          >
+                            <Trash2 size={12} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       ) : (
                         <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
                       )}
@@ -868,6 +966,18 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
           if (typeof onEditSale === 'function') {
             onEditSale(sale);
           }
+        }}
+        onDeleteInvoice={(sale) => {
+          setDeleteError(null);
+          setDeletingRow({
+            id: sale.id,
+            ref_no: sale.invoice_number || ('INV-' + String(sale.id).padStart(6, '0')),
+            entry_type: 'sale',
+            type: 'Invoice',
+            debit: sale.current_invoice_total || sale.total_amount,
+            entry_date: sale.invoice_date || sale.sale_date || today(),
+            description: `Invoice #${sale.invoice_number || sale.id}`,
+          });
         }}
       />
 
@@ -1120,11 +1230,257 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
                 )}
 
                 {/* Footer Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 10, paddingTop: 14, borderTop: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 10, paddingTop: 14, borderTop: '1px solid #f1f5f9' }}>
                   <button
                     type="button"
                     disabled={savingEdit}
-                    onClick={() => setEditingRow(null)}
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeletingRow(editingRow);
+                    }}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 10,
+                      border: '1.5px solid #fee2e2',
+                      background: '#fef2f2',
+                      color: '#dc2626',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#dc2626'; e.currentTarget.style.color = '#fff'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#dc2626'; }}
+                    title="Delete this transaction"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete</span>
+                  </button>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button
+                      type="button"
+                      disabled={savingEdit}
+                      onClick={() => setEditingRow(null)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: 10,
+                        border: '1.5px solid #e2e8f0',
+                        background: '#fff',
+                        color: '#64748b',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingEdit}
+                      style={{
+                        padding: '8px 20px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: '#4f46e5',
+                        color: '#fff',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: savingEdit ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 2px 8px rgba(79, 70, 229, 0.3)',
+                      }}
+                    >
+                      {savingEdit ? (
+                        <>
+                          <RefreshCw size={13} className="animate-spin" />
+                          <span>Saving…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check size={14} />
+                          <span>Save Changes</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deletingRow && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              background: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => !isDeleting && setDeletingRow(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'relative',
+                width: '100%',
+                maxWidth: 460,
+                background: '#fff',
+                borderRadius: 20,
+                border: '1px solid #fee2e2',
+                boxShadow: '0 25px 50px -12px rgba(220, 38, 38, 0.25)',
+                overflow: 'hidden',
+                fontFamily: "'Inter', system-ui, sans-serif",
+              }}
+            >
+              {/* Modal Header */}
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderBottom: '1px solid #fee2e2',
+                  background: '#fff5f5',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      background: '#fee2e2',
+                      color: '#dc2626',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Trash2 size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#991b1b' }}>
+                      Delete Transaction
+                    </h3>
+                    <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#dc2626' }}>
+                      {deletingRow.ref_no}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setDeletingRow(null)}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                    color: '#94a3b8',
+                    padding: 4,
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {deleteError && (
+                  <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertCircle size={15} />
+                    <span>{deleteError}</span>
+                  </div>
+                )}
+
+                <p style={{ margin: 0, fontSize: 13, color: '#334155', lineHeight: 1.5 }}>
+                  Are you sure you want to permanently delete this transaction? This action will adjust party balances accordingly.
+                </p>
+
+                {/* Summary Card */}
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 12,
+                  padding: '12px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  fontSize: 12
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Reference:</span>
+                    <span style={{ fontWeight: 800, fontFamily: 'monospace', color: '#0f172a' }}>{deletingRow.ref_no}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Type:</span>
+                    <TypeBadge type={deletingRow.entry_type} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Date:</span>
+                    <span style={{ fontWeight: 700, color: '#0f172a' }}>{formatDMY(deletingRow.entry_date)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Amount:</span>
+                    <span style={{ fontWeight: 800, fontSize: 14, color: money(deletingRow.credit) > 0 ? '#16a34a' : '#dc2626' }}>
+                      {currency(money(deletingRow.credit) > 0 ? deletingRow.credit : deletingRow.debit)}
+                    </span>
+                  </div>
+                  {deletingRow.description && (
+                    <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>Description:</span>
+                      <span style={{ color: '#334155', fontSize: 11, fontWeight: 600 }}>{deletingRow.description}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Accounting Warning Notice */}
+                <div style={{
+                  background: '#fffbeb',
+                  border: '1px solid #fef08a',
+                  borderRadius: 10,
+                  padding: '10px 12px',
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'flex-start'
+                }}>
+                  <AlertTriangle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span style={{ fontSize: 11, color: '#92400e', lineHeight: 1.4 }}>
+                    {deletingRow.entry_type === 'payment'
+                      ? 'Deleting will release allocations against unpaid invoices, revert advance credit adjustments, and recalculate customer ledger balance.'
+                      : (deletingRow.type === 'Invoice' || deletingRow.entry_type === 'sale' || String(deletingRow.ref_no || '').startsWith('INV-'))
+                      ? 'Deleting this invoice will restore inventory stock to batches, revert any applied credit notes or advances, and recalculate customer balance.'
+                      : deletingRow.entry_type === 'credit_note'
+                      ? 'Deleting will release any redeemed sale credits, restore stock adjustments, and recalculate customer balance.'
+                      : deletingRow.entry_type === 'opening_balance'
+                      ? 'Deleting will reset the opening balance to ₹0.00 and update running totals.'
+                      : 'Deleting will remove the record and update the party ledger and closing balance.'}
+                  </span>
+                </div>
+
+                {/* Footer Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 6, paddingTop: 14, borderTop: '1px solid #f1f5f9' }}>
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => setDeletingRow(null)}
                     style={{
                       padding: '8px 16px',
                       borderRadius: 10,
@@ -1133,43 +1489,44 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
                       color: '#64748b',
                       fontSize: 12,
                       fontWeight: 700,
-                      cursor: 'pointer',
+                      cursor: isDeleting ? 'not-allowed' : 'pointer',
                     }}
                   >
                     Cancel
                   </button>
                   <button
-                    type="submit"
-                    disabled={savingEdit}
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => handleConfirmDelete(deletingRow)}
                     style={{
                       padding: '8px 20px',
                       borderRadius: 10,
                       border: 'none',
-                      background: '#4f46e5',
+                      background: '#dc2626',
                       color: '#fff',
                       fontSize: 12,
                       fontWeight: 700,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
-                      cursor: savingEdit ? 'not-allowed' : 'pointer',
-                      boxShadow: '0 2px 8px rgba(79, 70, 229, 0.3)',
+                      cursor: isDeleting ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 2px 8px rgba(220, 38, 38, 0.35)',
                     }}
                   >
-                    {savingEdit ? (
+                    {isDeleting ? (
                       <>
                         <RefreshCw size={13} className="animate-spin" />
-                        <span>Saving…</span>
+                        <span>Deleting…</span>
                       </>
                     ) : (
                       <>
-                        <Check size={14} />
-                        <span>Save Changes</span>
+                        <Trash2 size={13} />
+                        <span>Confirm Delete</span>
                       </>
                     )}
                   </button>
                 </div>
-              </form>
+              </div>
             </motion.div>
           </div>
         )}

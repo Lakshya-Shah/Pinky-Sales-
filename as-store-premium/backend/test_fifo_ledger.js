@@ -86,12 +86,40 @@ async function runTests() {
   let testProduct = null;
   let shopId = 1;
 
+  async function cleanAllTestCustomers() {
+    await runQuery(`DELETE FROM sale_batch_allocations WHERE sale_id IN (SELECT id FROM sales WHERE invoice_number LIKE 'INV-TEST-%')`).catch(() => {});
+    await runQuery(`DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE invoice_number LIKE 'INV-TEST-%')`).catch(() => {});
+    await runQuery(`DELETE FROM sales WHERE invoice_number LIKE 'INV-TEST-%'`).catch(() => {});
+
+    const testCusts = await allRecords(`
+      SELECT id FROM customers 
+      WHERE name LIKE 'Test FIFO Customer%' 
+         OR name LIKE 'Split Test Customer%' 
+         OR name LIKE 'Test Cust%'
+         OR name LIKE 'Test Balance Customer%'
+         OR name ILIKE '%Test Cust%'
+         OR mobile LIKE '999990000%'
+         OR mobile LIKE '98765%'
+    `);
+    if (testCusts && testCusts.length > 0) {
+      const ids = testCusts.map(c => c.id);
+      const idList = ids.join(',');
+      await runQuery(`DELETE FROM payment_allocations WHERE customer_id IN (${idList})`).catch(() => {});
+      await runQuery(`DELETE FROM payments WHERE customer_id IN (${idList})`).catch(() => {});
+      await runQuery(`DELETE FROM sale_batch_allocations WHERE sale_id IN (SELECT id FROM sales WHERE customer_id IN (${idList}))`).catch(() => {});
+      await runQuery(`DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE customer_id IN (${idList}))`).catch(() => {});
+      await runQuery(`DELETE FROM credit_note_redemptions WHERE customer_id IN (${idList}) OR sale_id IN (SELECT id FROM sales WHERE customer_id IN (${idList}))`).catch(() => {});
+      await runQuery(`DELETE FROM sales_returns WHERE credit_note_id IN (SELECT id FROM credit_notes WHERE customer_id IN (${idList}))`).catch(() => {});
+      await runQuery(`DELETE FROM credit_notes WHERE customer_id IN (${idList})`).catch(() => {});
+      await runQuery(`DELETE FROM sales WHERE customer_id IN (${idList})`).catch(() => {});
+      await runQuery(`DELETE FROM ledger_entries WHERE customer_id IN (${idList})`).catch(() => {});
+      await runQuery(`DELETE FROM customers WHERE id IN (${idList})`).catch(() => {});
+    }
+  }
+
   try {
     // 0. Clean up previous test runs
-    await runQuery("DELETE FROM payment_allocations WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE 'Test FIFO Customer%' OR name LIKE 'Split Test Customer%')");
-    await runQuery("DELETE FROM payments WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE 'Test FIFO Customer%' OR name LIKE 'Split Test Customer%')");
-    await runQuery("DELETE FROM sales WHERE customer_id IN (SELECT id FROM customers WHERE name LIKE 'Test FIFO Customer%' OR name LIKE 'Split Test Customer%')");
-    await runQuery("DELETE FROM customers WHERE name LIKE 'Test FIFO Customer%' OR name LIKE 'Split Test Customer%'");
+    await cleanAllTestCustomers();
 
     // Ensure a test product and shop exist
     const shop = await getRecord('SELECT id FROM shops LIMIT 1');
@@ -567,10 +595,11 @@ async function runTests() {
     );
 
     // 2. Invoice with partial payment
+    const testInvSyncNum = `INV-TEST-SYNC-${Date.now()}`;
     const saleRow = await runQuery(
       `INSERT INTO sales (shop_id, customer_id, invoice_number, total_amount, paid_amount, pending_amount, status, sale_date)
-       VALUES (?, ?, 'INV-TEST-SYNC', 20000.00, 5000.00, 15000.00, 'partial', CURRENT_DATE) RETURNING id`,
-      [shopId, customer5Id]
+       VALUES (?, ?, ?, 20000.00, 5000.00, 15000.00, 'partial', CURRENT_DATE) RETURNING id`,
+      [shopId, customer5Id, testInvSyncNum]
     );
 
     const invPay = await runQuery(
@@ -754,43 +783,12 @@ async function runTests() {
     console.error('\n❌ TEST SUITE FAILED:', err);
     process.exitCode = 1;
   } finally {
-    // Cleanup test records
+    // Cleanup all test records
     try {
-      if (testCustomer) {
-        await runQuery('DELETE FROM payment_allocations WHERE customer_id = ?', [testCustomer.id]);
-        await runQuery('DELETE FROM payments WHERE customer_id = ?', [testCustomer.id]);
-        await runQuery('DELETE FROM sales WHERE customer_id = ?', [testCustomer.id]);
-        await runQuery('DELETE FROM customers WHERE id = ?', [testCustomer.id]);
-      }
-      if (customer3Id) {
-        await runQuery('DELETE FROM payment_allocations WHERE customer_id = ?', [customer3Id]);
-        await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer3Id]);
-        await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer3Id]);
-        await runQuery('DELETE FROM customers WHERE id = ?', [customer3Id]);
-      }
-      if (customer4Id) {
-        await runQuery('DELETE FROM credit_notes WHERE customer_id = ?', [customer4Id]);
-        await runQuery('DELETE FROM customers WHERE id = ?', [customer4Id]);
-      }
-      if (customer5Id) {
-        await runQuery('DELETE FROM payment_allocations WHERE customer_id = ?', [customer5Id]);
-        await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer5Id]);
-        await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer5Id]);
-        await runQuery('DELETE FROM customers WHERE id = ?', [customer5Id]);
-      }
-      if (customer6Id) {
-        await runQuery('DELETE FROM payment_allocations WHERE customer_id = ?', [customer6Id]);
-        await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer6Id]);
-        await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer6Id]);
-        await runQuery('DELETE FROM customers WHERE id = ?', [customer6Id]);
-      }
-      if (customer7Id) {
-        await runQuery('DELETE FROM payment_allocations WHERE customer_id = ?', [customer7Id]);
-        await runQuery('DELETE FROM payments WHERE customer_id = ?', [customer7Id]);
-        await runQuery('DELETE FROM sales WHERE customer_id = ?', [customer7Id]);
-        await runQuery('DELETE FROM customers WHERE id = ?', [customer7Id]);
-      }
-    } catch {}
+      await cleanAllTestCustomers();
+    } catch (err) {
+      console.warn('Error during test cleanup:', err);
+    }
     await pool.end();
   }
 }

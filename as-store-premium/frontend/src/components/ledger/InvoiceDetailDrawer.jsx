@@ -24,6 +24,7 @@ import {
   ArrowDownLeft,
   TrendingUp,
   Edit3,
+  Trash2,
 } from 'lucide-react';
 import {
   generateInvoicePDFDoc,
@@ -44,6 +45,7 @@ export default function InvoiceDetailDrawer({
   shopId = null,
   setGlobalToast,
   onEditInvoice,
+  onDeleteInvoice,
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -252,6 +254,20 @@ export default function InvoiceDetailDrawer({
                       >
                         <Edit3 size={13} />
                         <span>Edit</span>
+                      </button>
+                    )}
+                    {onDeleteInvoice && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDeleteInvoice(sale);
+                          onClose();
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold shadow-sm transition-all cursor-pointer"
+                        title="Delete Invoice"
+                      >
+                        <Trash2 size={13} />
+                        <span>Delete</span>
                       </button>
                     )}
                     <button
