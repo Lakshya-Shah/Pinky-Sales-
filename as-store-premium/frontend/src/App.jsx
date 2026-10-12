@@ -3483,6 +3483,8 @@ function App() {
     }))
     .filter((section) => section.items.length);
 
+  const lowStockAlerts = useMemo(() => combineLowStockAlerts(data.dashboard?.lowStock), [data.dashboard?.lowStock]);
+
   const mobileNavItems = useMemo(() => {
     if (role === 'customer' || role === 'user') {
       return [
@@ -7999,7 +8001,6 @@ function App() {
 
   const stableWarehouseInventoryQuantity = stockSummaryLoaded ? Number(stockSummaryTotals.warehouse_quantity || 0) : warehouseInventoryQuantity;
   const accessibleInventoryQuantity = stockSummaryLoaded ? Number(stockSummaryTotals.quantity || 0) : stockWithOwnership.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-  const lowStockAlerts = useMemo(() => combineLowStockAlerts(data.dashboard?.lowStock), [data.dashboard?.lowStock]);
   const dashboardAvailability = data.dashboard?.modelAvailability || [];
   const dashboardWarehouseStock = useMemo(() => {
     // Prefer totals.warehouse_stock (always fetched directly from warehouse shop, unscoped).
