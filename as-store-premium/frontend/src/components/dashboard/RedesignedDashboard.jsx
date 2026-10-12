@@ -49,35 +49,42 @@ import {
   Loader2
 } from 'lucide-react';
 
-// Animated Number Counter Helper
+// Animated Number Counter Helper - Smooth & cancels on unmount
 const AnimatedCounter = React.memo(function AnimatedCounter({ value, prefix = '', suffix = '', decimals = 0 }) {
-  const [displayValue, setDisplayValue] = useState(0);
   const targetValue = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^0-9.-]+/g, '')) || 0;
+  const [displayValue, setDisplayValue] = useState(targetValue);
+  const prevValueRef = useRef(targetValue);
 
   useEffect(() => {
-    let start = 0;
+    const start = prevValueRef.current;
     const end = targetValue;
+    prevValueRef.current = targetValue;
+
     if (start === end) {
       setDisplayValue(end);
       return;
     }
-    const duration = 800; // ms
+
+    const duration = 400; // Snappy 400ms transition
     const startTime = performance.now();
+    let animId;
 
     const updateCounter = (currentTime) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      // Ease out quad
       const easeProgress = 1 - (1 - progress) * (1 - progress);
       const current = start + (end - start) * easeProgress;
       setDisplayValue(current);
 
       if (progress < 1) {
-        requestAnimationFrame(updateCounter);
+        animId = requestAnimationFrame(updateCounter);
       }
     };
 
-    requestAnimationFrame(updateCounter);
+    animId = requestAnimationFrame(updateCounter);
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
   }, [targetValue]);
 
   const formatted = decimals > 0 

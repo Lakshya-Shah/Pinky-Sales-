@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -4438,14 +4436,16 @@ button:disabled {
   }
 
   .topbar-actions {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    margin-left: auto;
   }
 
-  .user-pill,
-  .topbar-signout {
-    width: 100%;
-    justify-content: center;
+  .user-pill {
+    width: auto;
   }
 
   /* Touch target safety for mobile devices (minimum 44x44px for main controls) */
@@ -6819,6 +6819,224 @@ button:disabled {
 .stock-table-wrapper {
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
+}
+
+/* ==========================================================================
+   MOBILE & MULTI-DEVICE ULTRA-PERFORMANCE (NO-LAG ENGINE)
+   ========================================================================== */
+
+/* Universal instant-tap response (eliminates 300ms mobile touch delay) */
+a, button, input, select, textarea, [role="button"], .card, .clickable {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Offscreen content rendering optimization - dramatically cuts layout/paint times */
+.saas-table-row,
+.stock-table-row-enhanced,
+.card-grid > * {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 72px;
+}
+
+/* Prevent horizontal page bounce on mobile */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+}
+
+/* Mobile Bottom Navigation Bar */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Disable heavy GPU-taxing filters on mobile to eliminate scrolling lag */
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .blob {
+    display: none !important;
+  }
+
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 45;
+    background: #ffffff;
+    border-top: 1px solid rgba(226, 232, 240, 0.95);
+    box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06);
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    align-items: center;
+    justify-content: space-around;
+    padding-left: 6px;
+    padding-right: 6px;
+    touch-action: manipulation;
+  }
+
+  .dark .mobile-bottom-nav {
+    background: #0f172a;
+    border-top-color: rgba(51, 65, 85, 0.85);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  .mobile-nav-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: transparent;
+    border: none;
+    padding: 6px 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    position: relative;
+    flex: 1;
+    min-height: 46px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    color: #64748b;
+    transition: transform 0.12s ease;
+  }
+
+  .dark .mobile-nav-btn {
+    color: #94a3b8;
+  }
+
+  .mobile-nav-btn:active {
+    transform: scale(0.92);
+  }
+
+  .mobile-nav-btn.active {
+    color: #0d9488;
+  }
+
+  .dark .mobile-nav-btn.active {
+    color: #2dd4bf;
+  }
+
+  .mobile-nav-dot {
+    position: absolute;
+    bottom: 2px;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: #0d9488;
+  }
+
+  .dark .mobile-nav-dot {
+    background: #2dd4bf;
+  }
+
+  /* Workspace padding on mobile to account for sticky bottom bar */
+  .workspace {
+    padding: 10px 12px calc(68px + env(safe-area-inset-bottom, 0px)) 12px !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    width: 100% !important;
+  }
+
+  /* Compact topbar on mobile */
+  .topbar {
+    min-height: 52px !important;
+    padding: 8px 12px !important;
+    margin-bottom: 12px !important;
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    border-radius: 12px !important;
+  }
+
+  .topbar::before {
+    display: none !important;
+  }
+
+  .topbar .page-title {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .topbar .eyebrow {
+    font-size: 9.5px !important;
+    margin-bottom: 0px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar h1 {
+    font-size: 16.5px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar p {
+    display: none !important;
+  }
+
+  .topbar-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    margin-left: auto !important;
+    width: auto !important;
+  }
+
+  .user-pill {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+    max-width: 110px;
+    overflow: hidden;
+  }
+
+  .user-pill span b {
+    display: block;
+    max-width: 70px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .user-pill small {
+    display: none !important;
+  }
+
+  /* Responsive tables: ensure smooth touch scrolling without page blowout */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-x: contain !important;
+    scrollbar-width: thin;
+  }
+
+  /* Subtle indicator on mobile scrollable tables */
+  .overflow-x-auto::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 4px;
+  }
+
+  /* Prevent spring and hover effects from causing stutter on touch */
+  .card:hover,
+  .stat:hover,
+  .kpi-bento-card:hover {
+    transform: none !important;
+  }
 }
 
 

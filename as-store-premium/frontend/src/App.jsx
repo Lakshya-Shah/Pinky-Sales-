@@ -939,70 +939,10 @@ const itemVariants = {
 };
 
 function Magnetic({ children, className = 'inline-block' }) {
-  const ref = useRef(null);
-  const [isHovered, setIsHovered] = useState(false);
-
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-
-  const springConfig = { damping: 15, stiffness: 150, mass: 0.6 };
-  const springX = useSpring(x, springConfig);
-  const springY = useSpring(y, springConfig);
-
-  useEffect(() => {
-    const isMobile = !window.matchMedia('(hover: hover)').matches;
-    if (isMobile) return;
-
-    const handleMouseMove = (e) => {
-      if (!ref.current) return;
-      const { clientX, clientY } = e;
-      const { left, top, width, height } = ref.current.getBoundingClientRect();
-      const centerX = left + width / 2;
-      const centerY = top + height / 2;
-
-      const distanceX = clientX - centerX;
-      const distanceY = clientY - centerY;
-
-      const radius = 60;
-      const distance = Math.hypot(distanceX, distanceY);
-
-      if (distance < radius) {
-        setIsHovered(true);
-        const pull = 0.35;
-        x.set(distanceX * pull);
-        y.set(distanceY * pull);
-      } else {
-        setIsHovered(false);
-        x.set(0);
-        y.set(0);
-      }
-    };
-
-    const handleMouseLeave = () => {
-      setIsHovered(false);
-      x.set(0);
-      y.set(0);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    ref.current?.addEventListener('mouseleave', handleMouseLeave);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      ref.current?.removeEventListener('mouseleave', handleMouseLeave);
-    };
-  }, [x, y]);
-
   return (
-    <motion.div
-      ref={ref}
-      style={{ x: springX, y: springY }}
-      animate={{ scale: isHovered ? 1.04 : 1 }}
-      transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-      className={className}
-    >
+    <div className={`transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98] ${className}`}>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -1193,10 +1133,10 @@ const SaleItemRow = React.memo(function SaleItemRow({
   const isOverStock = Boolean(item.product_id) && availableStock > 0 && currentQty > availableStock;
 
   return (
-    <div className="bg-slate-50/60 border border-slate-200/70 rounded-xl p-3 space-y-2.5 transition-all hover:border-slate-300">
-      <div className="flex flex-wrap items-end gap-2.5">
+    <div className="bg-slate-50/60 border border-slate-200/70 rounded-xl p-2.5 sm:p-3 space-y-2.5 transition-all hover:border-slate-300">
+      <div className="flex flex-wrap items-end gap-2 sm:gap-2.5">
         {/* Product Selector with wider container */}
-        <div className="flex-[3] min-w-[320px] sm:min-w-[420px] lg:min-w-[480px]">
+        <div className="flex-[3] w-full sm:w-auto min-w-0 sm:min-w-[360px] lg:min-w-[480px]">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Product / Model</label>
           <SearchableCombobox
             id={`sale-product-combobox-${idx}`}
@@ -1222,7 +1162,7 @@ const SaleItemRow = React.memo(function SaleItemRow({
 
         {/* Color / Variant Selector Dropdown - only when selected product has colors */}
         {Boolean(item.product_id) && availableColors.length > 0 && (
-          <div className="w-[140px]">
+          <div className="w-full sm:w-[140px]">
             <label className="block text-[11px] font-semibold text-slate-600 mb-1">Color / Variant</label>
             <select
               value={currentVariantValue}
@@ -1253,7 +1193,7 @@ const SaleItemRow = React.memo(function SaleItemRow({
         )}
 
         {/* Price Tier */}
-        <div className="w-[115px]">
+        <div className="w-[calc(50%-4px)] sm:w-[115px]">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Price Tier</label>
           <select
             value={item.price_type || 'wholesale'}
@@ -1267,7 +1207,7 @@ const SaleItemRow = React.memo(function SaleItemRow({
         </div>
 
         {/* Selling Price */}
-        <div className="w-[105px]">
+        <div className="w-[calc(50%-4px)] sm:w-[105px]">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Price (₹)</label>
           <input
             id={`sale-item-price-${idx}`}
@@ -1291,7 +1231,7 @@ const SaleItemRow = React.memo(function SaleItemRow({
         </div>
 
         {/* Quantity with live workspace stock guard */}
-        <div className="w-[88px]">
+        <div className="w-[calc(50%-4px)] sm:w-[88px]">
           <div className="flex items-center justify-between mb-1">
             <label className="block text-[11px] font-semibold text-slate-600">Qty</label>
             {Boolean(item.product_id) && (
@@ -1340,9 +1280,9 @@ const SaleItemRow = React.memo(function SaleItemRow({
         </div>
 
         {/* Total Amount */}
-        <div className="w-[110px]">
+        <div className="w-[calc(50%-44px)] sm:w-[110px]">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Total (₹)</label>
-          <div className="w-full h-10 px-2.5 flex items-center justify-end bg-slate-100/90 border border-slate-200 rounded-xl text-xs font-black text-slate-900">
+          <div className="w-full h-10 px-2.5 flex items-center justify-end bg-slate-100/90 border border-slate-200 rounded-xl text-xs font-black text-slate-900 truncate">
             ₹{Number(item.total_amount || 0).toLocaleString('en-IN')}
           </div>
         </div>
@@ -1351,7 +1291,7 @@ const SaleItemRow = React.memo(function SaleItemRow({
         <button
           type="button"
           onClick={() => removeSaleItem(idx)}
-          className="h-10 px-2.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl border border-transparent hover:border-rose-200 transition-all cursor-pointer flex items-center justify-center shrink-0"
+          className="h-10 w-9 sm:w-auto px-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl border border-transparent hover:border-rose-200 transition-all cursor-pointer flex items-center justify-center shrink-0"
           title={itemsLength > 1 ? "Remove item" : "Clear item"}
         >
           <Trash2 size={16} />
@@ -3542,6 +3482,44 @@ function App() {
       items: section.ids.map((id) => navItems.get(id)).filter(Boolean),
     }))
     .filter((section) => section.items.length);
+
+  const mobileNavItems = useMemo(() => {
+    if (role === 'customer' || role === 'user') {
+      return [
+        { id: 'catalog', label: 'Catalog', Icon: ShoppingBag },
+        { id: 'spares', label: 'Spares', Icon: Cpu },
+        { id: 'battery', label: 'Battery', Icon: BatteryCharging },
+        { id: 'tools', label: 'Tools', Icon: Wrench },
+        { id: 'more', label: 'More', Icon: Menu, action: () => setOpen(true) },
+      ];
+    }
+    if (role === 'supplier') {
+      return [
+        { id: 'dashboard', label: 'Dashboard', Icon: BarChart3 },
+        { id: 'prices', label: 'Prices', Icon: IndianRupee },
+        { id: 'spares', label: 'Spares', Icon: Cpu },
+        { id: 'models', label: 'Models', Icon: Smartphone },
+        { id: 'more', label: 'More', Icon: Menu, action: () => setOpen(true) },
+      ];
+    }
+    if (role === 'shopkeeper' || role === 'admin') {
+      return [
+        { id: 'dashboard', label: 'Dashboard', Icon: BarChart3 },
+        { id: 'sales', label: 'Sales', Icon: ReceiptText },
+        { id: 'stock', label: 'Stock', Icon: Package, badge: lowStockAlerts.length },
+        { id: 'payments', label: 'Pending', Icon: CreditCard },
+        { id: 'more', label: 'More', Icon: Menu, action: () => setOpen(true) },
+      ];
+    }
+    // Superadmin
+    return [
+      { id: 'dashboard', label: 'Dashboard', Icon: BarChart3 },
+      { id: 'sales', label: 'Sales', Icon: ReceiptText },
+      { id: 'stock', label: 'Stock', Icon: Package, badge: lowStockAlerts.length },
+      { id: 'ledger', label: 'Ledger', Icon: BookOpen },
+      { id: 'more', label: 'More', Icon: Menu, action: () => setOpen(true) },
+    ];
+  }, [role, lowStockAlerts.length]);
   const currentPageMeta = pageMetaById[active] || {
     group: 'Workspace',
     title: active.replace('-', ' '),
@@ -11959,6 +11937,41 @@ function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Modern Mobile Bottom Navigation Bar */}
+      <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
+        {mobileNavItems.map(({ id, label, Icon, action, badge }) => {
+          const isActive = id === 'more' ? open : (active === id && !open);
+          return (
+            <button
+              key={id}
+              type="button"
+              className={`mobile-nav-btn ${isActive ? 'active' : ''}`}
+              onClick={() => {
+                if (action) {
+                  action();
+                } else {
+                  setActivePage(id);
+                  setOpen(false);
+                }
+              }}
+            >
+              <div className="relative flex items-center justify-center">
+                <Icon size={20} className={isActive ? 'text-teal-600 dark:text-teal-400' : 'text-slate-500 dark:text-slate-400'} />
+                {badge > 0 && (
+                  <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </div>
+              <span className={`text-[10px] font-bold tracking-tight ${isActive ? 'text-teal-700 dark:text-teal-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                {label}
+              </span>
+              {isActive && <span className="mobile-nav-dot" />}
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
