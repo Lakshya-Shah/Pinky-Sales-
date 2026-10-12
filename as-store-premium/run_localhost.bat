@@ -15,10 +15,22 @@ timeout /t 2 /nobreak >nul
 echo [2/2] Starting Frontend Vite Server on http://localhost:3000 ...
 start "Pinky Sales Frontend" cmd /k "cd frontend && npm run dev"
 
+setlocal enabledelayedexpansion
 echo.
-echo Both servers have been launched in separate terminal windows!
-echo - Backend: http://localhost:5000
-echo - Frontend: http://localhost:3000
+echo ========================================================
+echo SERVER STATUS:
+echo - Computer Browser: http://localhost:3000
+echo - Backend API:      http://localhost:5000
+echo.
+echo TO TEST ON YOUR PHONE (Same Wi-Fi Network):
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4 Address" /c:"IPv4"') do (
+    set "IP=%%a"
+    set "IP=!IP: =!"
+    if defined IP (
+        echo   --^> http://!IP!:3000
+    )
+)
+echo ========================================================
 echo.
 echo Press any key to exit this launcher window...
 pause >nul

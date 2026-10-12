@@ -24,7 +24,9 @@ function BucketBar({ row, max }) {
   );
 }
 
-export default function AgingReport({ session, api, setGlobalToast }) {
+export default function AgingReport({ session, api, setGlobalToast, selectedShop = '', shops = [] }) {
+  const isSuperAdmin = session?.role === 'superadmin';
+  const [internalShop, setInternalShop] = useState(selectedShop || '');
   const [mode, setMode] = useState('ar'); // 'ar' | 'ap'
   const [asOfDate, setAsOfDate] = useState(today());
   const [report, setReport] = useState(null);
@@ -33,12 +35,21 @@ export default function AgingReport({ session, api, setGlobalToast }) {
   const [sortKey, setSortKey] = useState('total_outstanding');
   const [sortDir, setSortDir] = useState('desc');
 
+  useEffect(() => {
+    if (isSuperAdmin && selectedShop !== undefined) {
+      setInternalShop(selectedShop);
+    }
+  }, [selectedShop, isSuperAdmin]);
+
+  const effectiveShopId = !isSuperAdmin ? (session?.shop_id || '') : (internalShop || '');
+
   const fetchReport = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const endpoint = mode === 'ar' ? '/reports/ar-aging' : '/reports/ap-aging';
-      const data = await api(`${endpoint}?as_of=${asOfDate}`);
+      const shopParam = effectiveShopId ? `&shopId=${effectiveShopId}` : '';
+      const data = await api(`${endpoint}?as_of=${asOfDate}${shopParam}`);
       setReport(data);
     } catch (e) {
       setError(e.message || 'Failed to load aging report.');
@@ -46,9 +57,9 @@ export default function AgingReport({ session, api, setGlobalToast }) {
     } finally {
       setLoading(false);
     }
-  }, [mode, asOfDate, api]);
+  }, [mode, asOfDate, effectiveShopId, api, setGlobalToast]);
 
-  useEffect(() => { fetchReport(); }, [mode]);
+  useEffect(() => { fetchReport(); }, [fetchReport]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -95,10 +106,27 @@ export default function AgingReport({ session, api, setGlobalToast }) {
         }}>
           <Clock size={18} />
         </div>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#0f172a', letterSpacing: -0.4 }}>
-            {mode === 'ar' ? 'Accounts Receivable' : 'Accounts Payable'} Aging
-          </h1>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#0f172a', letterSpacing: -0.4 }}>
+              {mode === 'ar' ? 'Accounts Receivable' : 'Accounts Payable'} Aging
+            </h1>
+            {!isSuperAdmin && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '3px 10px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                border: '1px solid #bfdbfe'
+              }}>
+                Branch: {session?.shop_name || 'My Branch'}
+              </span>
+            )}
+          </div>
           <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Overdue analysis by aging buckets</p>
         </div>
       </div>
@@ -124,6 +152,31 @@ export default function AgingReport({ session, api, setGlobalToast }) {
               ))}
             </div>
           </div>
+          {isSuperAdmin && (
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Branch Filter</label>
+              <select
+                value={internalShop}
+                onChange={e => setInternalShop(e.target.value)}
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: 10,
+                  border: '1.5px solid #e2e8f0',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: '#f8fafc',
+                  color: '#0f172a'
+                }}
+              >
+                <option value="">All Branches</option>
+                {shops.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.location_type === 'warehouse' ? '(Warehouse)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>As Of Date</label>
             <input type="date" value={asOfDate} onChange={e => setAsOfDate(e.target.value)}

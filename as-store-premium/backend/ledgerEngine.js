@@ -645,7 +645,10 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
 export async function getARAgingReport(shopId, asOfDate) {
   const asOf = isoDate(asOfDate) || new Date().toISOString().slice(0, 10);
   const shopCond = shopId ? 'AND s.shop_id = ?' : '';
-  const shopCondC = shopId ? 'AND c2.shop_id = ?' : '';
+  const shopCondC = shopId ? 'AND s2.shop_id = ?' : '';
+  const shopCondCust = shopId ? 'AND c.shop_id = ?' : '';
+  const shopCondC2 = shopId ? 'AND c2.shop_id = ?' : '';
+  const shopCondSub = shopId ? 'WHERE c_sub.shop_id = ?' : '';
 
   const sql = `
     WITH cust_unsettled_ob AS (
@@ -659,6 +662,7 @@ export async function getARAgingReport(shopId, asOfDate) {
              AND pa.reversed_at IS NULL), 0
         )) AS unsettled_ob
       FROM customers c_sub
+      ${shopCondSub}
     )
     SELECT
       c.id                                                                       AS customer_id,
@@ -687,21 +691,24 @@ export async function getARAgingReport(shopId, asOfDate) {
     JOIN cust_unsettled_ob uob ON uob.id = c.id
     LEFT JOIN sales s ON s.customer_id = c.id AND s.pending_amount > 0 ${shopCond}
     WHERE (s.id IS NOT NULL OR uob.unsettled_ob > 0)
+      ${shopCondCust}
       AND c.id IN (
         SELECT DISTINCT c2.id FROM customers c2
         JOIN cust_unsettled_ob uob2 ON uob2.id = c2.id
         LEFT JOIN sales s2 ON s2.customer_id = c2.id AND s2.pending_amount > 0 ${shopCondC}
-        WHERE s2.id IS NOT NULL OR uob2.unsettled_ob > 0
+        WHERE (s2.id IS NOT NULL OR uob2.unsettled_ob > 0)
+          ${shopCondC2}
       )
     GROUP BY c.id, c.name, c.mobile
     HAVING (COALESCE(SUM(s.pending_amount), 0) + COALESCE(MAX(uob.unsettled_ob), 0)) > 0
     ORDER BY total_outstanding DESC
   `;
 
-  // Placeholders: 5 asOf for CASE buckets (current uses 1, then 1-30, 31-60, 61-90, 90+)
-  // + shopId (if any) for the LEFT JOIN condition
-  // + shopId (if any) for the subquery
-  const fullParams = [asOf, asOf, asOf, asOf, asOf, asOf, asOf, asOf];
+  const fullParams = [];
+  if (shopId) fullParams.push(shopId);
+  fullParams.push(asOf, asOf, asOf, asOf, asOf, asOf, asOf, asOf);
+  if (shopId) fullParams.push(shopId);
+  if (shopId) fullParams.push(shopId);
   if (shopId) fullParams.push(shopId);
   if (shopId) fullParams.push(shopId);
 

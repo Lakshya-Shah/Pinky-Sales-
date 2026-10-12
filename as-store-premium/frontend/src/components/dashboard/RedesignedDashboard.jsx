@@ -735,24 +735,24 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
       </section>
 
       {/* HEADER BAR (Relative with proper spacing, not fighting for sticky top spot) */}
-      <header className="relative z-20 bg-white/95 dark:bg-slate-900/95 border-b border-slate-200/80 dark:border-slate-800 -mx-4 sm:-mx-8 px-4 sm:px-8 py-4 transition-all safe-area-pt">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <header className="relative z-20 bg-white/95 dark:bg-slate-900/95 border border-slate-200/80 dark:border-slate-800 sm:border-0 sm:border-b sm:-mx-8 sm:px-8 rounded-2xl sm:rounded-none px-4 py-3 sm:py-4 transition-all safe-area-pt shadow-xs sm:shadow-none">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
           
           {/* Greeting & Date */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center font-black shadow-lg shadow-teal-500/20">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-teal-500/20 text-sm sm:text-base">
               {userName.charAt(0)}
             </div>
             <div>
-              <div className="flex items-center flex-wrap gap-2">
-                <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+              <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
+                <h1 className="text-sm sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
                   {greeting}, {userName} 👋
                 </h1>
-                <span className="px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-600 dark:text-teal-400 font-extrabold text-[10px] border border-teal-200/60 dark:border-teal-800/60">
+                <span className="px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-600 dark:text-teal-400 font-extrabold text-[9.5px] sm:text-[10px] border border-teal-200/60 dark:border-teal-800/60">
                   {role === 'superadmin' ? 'Owner Control' : 'Branch Staff'}
                 </span>
               </div>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-400 flex items-center gap-2 mt-0.5">
+              <p className="text-[10px] sm:text-xs font-bold text-slate-400 flex items-center gap-1.5 mt-0.5">
                 <Clock className="w-3 h-3" />
                 {liveTime || 'Aug 5, 2026'}
               </p>
@@ -760,14 +760,14 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
           </div>
 
           {/* Right Header Actions */}
-          <div className="flex items-center gap-3 w-full md:w-auto md:justify-end">
+          <div className="flex items-center gap-2.5 sm:gap-3 w-full md:w-auto md:justify-end">
 
             {/* Notification Bell Dropdown */}
             <div className="relative" ref={notificationRef}>
               <button
                 type="button"
                 onClick={() => setNotificationsOpen(!notificationsOpen)}
-                className="relative p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all border border-slate-200/60 dark:border-slate-700/60 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                className="relative p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all border border-slate-200/60 dark:border-slate-700/60 min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px] flex items-center justify-center"
               >
                 <Bell className="w-4 h-4" />
                 {lowStockAlerts.length > 0 && (
@@ -809,7 +809,7 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
             <button
               type="button"
               onClick={onAddProduct}
-              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-600/25 transition-all active:scale-95 min-h-[44px]"
+              className="flex-1 sm:flex-initial px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/25 transition-all active:scale-95 min-h-[40px] sm:min-h-[44px]"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
               <span>Add Product</span>
@@ -821,11 +821,11 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
       {/* ---------------------------------------------------- */}
       {/* 1. QUICK ACTIONS GRID WIDGET */}
       {/* ---------------------------------------------------- */}
-      <section className="space-y-3">
+      <section className="space-y-2.5 sm:space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-black uppercase tracking-widest text-slate-400">Quick Commands</span>
+          <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-slate-400">Quick Commands</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+        <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3.5">
           {[
             { label: 'Add Product', icon: PackagePlus, color: 'from-emerald-500 to-teal-600', action: onAddProduct },
             { label: 'Create Sale', icon: ReceiptText, color: 'from-teal-600 to-cyan-600', action: onCreateSale },
@@ -840,19 +840,19 @@ const RedesignedDashboard = React.memo(function RedesignedDashboard({
                 key={item.label}
                 type="button"
                 whileHover={{ y: -3, scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileTap={{ scale: 0.95 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 onClick={item.action}
-                className="group relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all text-left flex flex-col justify-between overflow-hidden"
+                className="group relative p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs hover:shadow-xl transition-all text-center sm:text-left flex flex-col items-center sm:items-start justify-between overflow-hidden"
               >
-                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${item.color} text-white flex items-center justify-center shadow-md mb-3`}>
+                <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br ${item.color} text-white flex items-center justify-center shadow-xs sm:shadow-md mb-1.5 sm:mb-3`}>
                   <Icon className="w-4 h-4" />
                 </div>
-                <div>
-                  <strong className="text-xs font-black text-slate-800 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors block">
+                <div className="w-full">
+                  <strong className="text-[11px] sm:text-xs font-bold sm:font-black text-slate-800 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors block truncate">
                     {item.label}
                   </strong>
-                  <span className="text-[10px] text-slate-400 font-bold block mt-0.5">Quick trigger</span>
+                  <span className="hidden sm:block text-[10px] text-slate-400 font-bold mt-0.5">Quick trigger</span>
                 </div>
               </motion.button>
             );

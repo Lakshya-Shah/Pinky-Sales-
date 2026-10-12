@@ -9,6 +9,7 @@ export default function SuppliersPage({
   api,
   data = {},
   onBrandChange, // reused for reference changes notification
+  selectedShop = '',
   Empty = ({ title }) => (
     <div style={{ padding: '32px', textAlign: 'center', color: '#64748b', fontSize: '13px', fontWeight: '600' }}>
       {title || 'No records found'}
@@ -52,6 +53,15 @@ export default function SuppliersPage({
     const refs = data.reference?.suppliers || [];
     const products = data.products || [];
     
+    // Strict branch tenancy scoping: Branch logins never see superadmin/global suppliers
+    const targetShopId = !isSuperAdmin ? Number(session?.shop_id) : (selectedShop ? Number(selectedShop) : null);
+    const filteredRefs = refs.filter((s) => {
+      if (targetShopId) {
+        return Number(s.shop_id) === targetShopId;
+      }
+      return true;
+    });
+
     // Map supplier product metrics
     const supplierMetrics = new Map();
     products.forEach((p) => {
@@ -67,7 +77,7 @@ export default function SuppliersPage({
       }
     });
 
-    return refs
+    return filteredRefs
       .map((s) => {
         const metrics = supplierMetrics.get(String(s.id)) || { count: 0, stock: 0, val: 0 };
         return {
@@ -88,7 +98,7 @@ export default function SuppliersPage({
         };
       })
       .filter((s) => !searchVal || s.name.toLowerCase().includes(searchVal.toLowerCase()));
-  }, [data.reference?.suppliers, data.products, searchVal]);
+  }, [data.reference?.suppliers, data.products, searchVal, isSuperAdmin, session?.shop_id, selectedShop]);
 
   // Add / Edit Supplier submission
   const handleSaveSupplier = async (e) => {

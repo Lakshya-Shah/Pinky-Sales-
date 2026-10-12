@@ -504,7 +504,7 @@ const getReferenceData = (user = null) => {
     if (role === 'superadmin' || role === 'owner') {
       supplierSql = 'SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, is_active, shop_id, branch_id, mobile, gstin, address, opening_balance, opening_balance_date FROM suppliers ORDER BY LOWER(TRIM(name)), id';
     } else if (shopId) {
-      supplierSql = 'SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, is_active, shop_id, branch_id, mobile, gstin, address, opening_balance, opening_balance_date FROM suppliers WHERE shop_id = ? OR shop_id IS NULL ORDER BY LOWER(TRIM(name)), id';
+      supplierSql = 'SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, is_active, shop_id, branch_id, mobile, gstin, address, opening_balance, opening_balance_date FROM suppliers WHERE shop_id = ? ORDER BY LOWER(TRIM(name)), id';
       supplierParams = [shopId];
     } else {
       supplierSql = 'SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, is_active, shop_id, branch_id, mobile, gstin, address, opening_balance, opening_balance_date FROM suppliers WHERE shop_id IS NULL ORDER BY LOWER(TRIM(name)), id';
@@ -3280,7 +3280,7 @@ app.put(['/api/products/:id', '/products/:id'], authenticateToken, requireShopSt
 
 app.delete(['/api/products/:id', '/products/:id'], authenticateToken, requireShopStaff, async (req, res) => {
   try {
-    const product = await getRecord('SELECT id, name, short_name, image_url, image_urls FROM products WHERE id = ?', [req.params.id]);
+    const product = await getRecord('SELECT id, name, short_name, image_url, image_urls, shop_id FROM products WHERE id = ?', [req.params.id]);
     if (!product) return res.status(404).json({ error: 'Product not found.' });
 
     let historyCount = 0;
@@ -3313,6 +3313,16 @@ app.delete(['/api/products/:id', '/products/:id'], authenticateToken, requireSho
     
     // Soft delete / archive product if it has sales, request, or transfer history
     if (historyCount > 0) {
+      if (req.user.role !== 'superadmin') {
+        const userShopId = Number(req.user.shop_id);
+        await runQuery('DELETE FROM inventory_batches WHERE product_id = ? AND shop_id = ?', [req.params.id, userShopId]);
+        await runQuery('DELETE FROM stock WHERE product_id = ? AND shop_id = ?', [req.params.id, userShopId]);
+        if (product.shop_id && Number(product.shop_id) === userShopId) {
+          await runQuery('UPDATE products SET is_active = 0 WHERE id = ?', [req.params.id]);
+        }
+        await audit(req, 'Removed product from branch stock', 'product', req.params.id, product.short_name || product.name);
+        return res.json({ success: true, removedFromBranch: true });
+      }
       await runQuery('UPDATE products SET is_active = 0 WHERE id = ?', [req.params.id]);
       await audit(req, 'Soft deleted product (archived due to history)', 'product', req.params.id, product.short_name || product.name);
       return res.json({ success: true, archived: true });
@@ -3320,14 +3330,25 @@ app.delete(['/api/products/:id', '/products/:id'], authenticateToken, requireSho
 
     try {
       await runTransaction(async (tx) => {
-        await tx.runQuery('DELETE FROM inventory_batches WHERE product_id = ?', [req.params.id]);
-        await tx.runQuery('DELETE FROM stock WHERE product_id = ?', [req.params.id]);
-        await tx.runQuery('DELETE FROM products WHERE id = ?', [req.params.id]);
+        if (req.user.role !== 'superadmin') {
+          const userShopId = Number(req.user.shop_id);
+          await tx.runQuery('DELETE FROM inventory_batches WHERE product_id = ? AND shop_id = ?', [req.params.id, userShopId]);
+          await tx.runQuery('DELETE FROM stock WHERE product_id = ? AND shop_id = ?', [req.params.id, userShopId]);
+          if (product.shop_id && Number(product.shop_id) === userShopId) {
+            await tx.runQuery('DELETE FROM products WHERE id = ?', [req.params.id]);
+          }
+        } else {
+          await tx.runQuery('DELETE FROM inventory_batches WHERE product_id = ?', [req.params.id]);
+          await tx.runQuery('DELETE FROM stock WHERE product_id = ?', [req.params.id]);
+          await tx.runQuery('DELETE FROM products WHERE id = ?', [req.params.id]);
+        }
       });
 
       // Clean up product image(s) from Cloudflare R2 bucket only after successful hard delete
-      if (product.image_url) {
-        deleteImageFromR2(product.image_url).catch((err) => console.warn('[R2 Delete Image Warning]', err.message));
+      if (req.user.role === 'superadmin' || (product.shop_id && Number(product.shop_id) === Number(req.user.shop_id))) {
+        if (product.image_url) {
+          deleteImageFromR2(product.image_url).catch((err) => console.warn('[R2 Delete Image Warning]', err.message));
+        }
       }
       if (product.image_urls) {
         let urls = [];
@@ -4004,7 +4025,10 @@ app.get('/api/customers', authenticateToken, requireShopStaff, async (req, res) 
   const pagination = parsePagination(req.query);
   const params = [];
   const where = ['1 = 1'];
-  if (shopId) {
+  if (isShopStaffRole(req.user.role)) {
+    where.push('c.shop_id = ?');
+    params.push(Number(req.user.shop_id));
+  } else if (shopId) {
     where.push('c.shop_id = ?');
     params.push(shopId);
   }
@@ -4017,10 +4041,6 @@ app.get('/api/customers', authenticateToken, requireShopStaff, async (req, res) 
     "COALESCE(sh.name, '')",
   ]);
   appendDateRangeFilter(where, params, req.query.dateFrom || req.query.from, req.query.dateTo || req.query.to, 'c.created_at');
-  if (isShopStaffRole(req.user.role)) {
-    where.push('(c.created_by IS NULL OR c.created_by = ?)');
-    params.push(req.user.id);
-  }
   const netBalanceSql = `(
     COALESCE(c.opening_balance, 0)
     + COALESCE((SELECT SUM(COALESCE(NULLIF(s2.current_invoice_total, 0), s2.total_amount)) FROM sales s2 WHERE s2.customer_id = c.id AND s2.status NOT IN ('cancelled', 'void')), 0)
@@ -4805,7 +4825,10 @@ app.get(['/api/sales/customers', '/sales/customers'], authenticateToken, require
     const pagination = parsePagination(req.query);
     const params = [];
     const where = ['1 = 1'];
-    if (shopId) {
+    if (isShopStaffRole(req.user.role)) {
+      where.push('sa.shop_id = ?');
+      params.push(Number(req.user.shop_id));
+    } else if (shopId) {
       where.push('sa.shop_id = ?');
       params.push(shopId);
     }
@@ -4824,10 +4847,6 @@ app.get(['/api/sales/customers', '/sales/customers'], authenticateToken, require
       params.push(String(req.query.date).slice(0, 10));
     } else {
       appendDateRangeFilter(where, params, req.query.dateFrom || req.query.from, req.query.dateTo || req.query.to, 'COALESCE(sa.invoice_date::TEXT, sa.sale_date)');
-    }
-    if (isShopStaffRole(req.user.role)) {
-      where.push('(sa.created_by IS NULL OR sa.created_by = ?)');
-      params.push(req.user.id);
     }
     
     const baseSql = `

@@ -3,6 +3,7 @@ import {
   Smartphone, 
   LayoutGrid, 
   Table,
+  ArrowLeftRight,
   Send, 
   Filter, 
   Plus, 
@@ -115,6 +116,7 @@ const StockTableRow = React.memo(function StockTableRow({
   setIsAddProductOpen,
   setEditingProductId,
   showCost = false,
+  onViewDetails,
 }) {
   const isLowStock = item.quantity > 0 && item.quantity <= (data.shops?.find(s => s.id === item.shop_id)?.low_stock_threshold || 4);
   const isOutOfStock = Number(item.quantity) === 0;
@@ -130,6 +132,13 @@ const StockTableRow = React.memo(function StockTableRow({
   const cleanBrand = cleanBrandName(item.brand);
   const compatText = getCleanCompatibility(item);
 
+  const handleRowClickDetail = () => {
+    if (onViewDetails) {
+      const prod = (data.products || []).find(p => String(p.id) === String(item.product_id || item.id)) || item;
+      onViewDetails(prod);
+    }
+  };
+
   return (
     <tr 
       className={`stock-table-row-enhanced ${isOutOfStock ? 'out-of-stock-highlight' : isLowStock ? 'low-stock-highlight' : ''}`} 
@@ -138,15 +147,21 @@ const StockTableRow = React.memo(function StockTableRow({
       {/* Product Name, Thumbnail, Model */}
       <td className="py-3.5 px-4">
         <div className="flex items-center gap-3.5 min-w-0">
-          <ProductThumbnail
-            src={item.image_url}
-            alt={productName(item)}
-            category={item.part_category || item.category || 'Display'}
-            size={44}
-            rounded="14px"
-          />
+          <div onClick={handleRowClickDetail} className="cursor-pointer shrink-0" title="Click to view complete details">
+            <ProductThumbnail
+              src={item.image_url}
+              alt={productName(item)}
+              category={item.part_category || item.category || 'Display'}
+              size={44}
+              rounded="14px"
+            />
+          </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-sm text-slate-900 font-extrabold leading-snug break-words">
+            <span 
+              onClick={handleRowClickDetail}
+              className="text-sm text-slate-900 font-extrabold leading-snug break-words cursor-pointer hover:text-teal-700 transition-colors"
+              title="Click to view complete details"
+            >
               {formatTitleCase(productName(item))}
             </span>
             
@@ -325,6 +340,15 @@ const StockTableRow = React.memo(function StockTableRow({
           
           <button
             type="button"
+            title="View Full Product Details"
+            onClick={handleRowClickDetail}
+            className="stock-action-icon-btn bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200"
+          >
+            <Eye size={13} />
+          </button>
+
+          <button
+            type="button"
             title="Clone Product"
             onClick={() => {
               if (onCloneProduct) onCloneProduct(item);
@@ -345,7 +369,7 @@ const StockTableRow = React.memo(function StockTableRow({
             <Edit3 size={13} />
           </button>
 
-          {role === 'superadmin' && (
+          {(role === 'superadmin' || role === 'shopkeeper' || role === 'admin') && (
             <button
               type="button"
               title="Delete Product"
@@ -411,7 +435,9 @@ export default function StockPage({
   // Dual-view mode: 'table' (dense grid) or 'cards' (compact cards)
   const [viewMode, setViewMode] = useState(() => {
     try {
-      return localStorage.getItem('stock_view_mode') || 'table';
+      const saved = localStorage.getItem('stock_view_mode');
+      if (saved) return saved;
+      return typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table';
     } catch {
       return 'table';
     }
@@ -945,33 +971,31 @@ export default function StockPage({
   }, [allCatalogList, data.products, modelPickerSearch]);
 
   return (
-    <section className="space">
-      
-      {/* ==================== 1. HERO CONTROL BANNER ==================== */}
-      <div className="stock-hero-banner p-5 sm:p-6 mb-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+    <section className="space">      {/* ==================== 1. HERO CONTROL BANNER ==================== */}
+      <div className="stock-hero-banner p-3 sm:p-5 mb-3 sm:mb-5 rounded-2xl sm:rounded-3xl">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-5">
           <div>
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-teal-500/10 text-teal-700 border border-teal-200 shadow-2xs">
-                <Sparkles size={13} className="text-teal-600 animate-spin" style={{ animationDuration: '6s' }} />
-                Live Inventory Engine
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-1.5 flex-wrap">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-wider bg-teal-500/10 text-teal-700 border border-teal-200">
+                <Sparkles size={11} className="text-teal-600 animate-spin" style={{ animationDuration: '6s' }} />
+                Live Engine
               </span>
-              <span className="text-xs font-bold text-slate-500 bg-white/70 px-2.5 py-0.5 rounded-full border border-slate-200/80">
+              <span className="text-[10px] sm:text-xs font-bold text-slate-500 bg-white/80 px-2 py-0.5 rounded-full border border-slate-200/80">
                 🏬 {selectedLocation?.name || (role === 'shopkeeper' ? 'Assigned Shop' : 'Central Warehouse')}
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
-              {role === 'shopkeeper' ? 'Shop Stock Inventory' : 'Consolidated Stock Overview'}
+            <h1 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900 leading-tight">
+              {role === 'shopkeeper' ? 'Shop Stock Inventory' : 'Stock Inventory'}
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1 max-w-2xl">
+            <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1 max-w-2xl hidden sm:block">
               {role === 'shopkeeper'
                 ? 'Manage assigned shop inventory, trace color stock variants, and prepare customer orders.'
                 : 'Monitor real-time warehouse inventory, restock branch reserves, track FIFO profit margins, and manage catalog items.'}
             </p>
           </div>
 
-          {/* Quick Action Buttons Toolbar */}
-          <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Quick Action Buttons Toolbar: Horizontally scrollable on mobile to prevent clipping */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap no-scrollbar w-full lg:w-auto -mx-1 px-1">
             <button
               type="button"
               onClick={() => {
@@ -981,14 +1005,14 @@ export default function StockPage({
                   setIsAddProductOpen(false);
                 }
               }}
-              className={`px-3.5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border ${
+              className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border shrink-0 whitespace-nowrap active:scale-95 ${
                 isSetStockOpen
                   ? 'bg-teal-700 text-white border-teal-800 shadow-md'
                   : 'bg-teal-600 hover:bg-teal-700 text-white border-teal-700 hover:shadow'
               }`}
             >
               <Zap size={14} />
-              <span>{isSetStockOpen ? 'Hide Stock Form' : 'Adjust Stock'}</span>
+              <span>{isSetStockOpen ? 'Hide Form' : 'Adjust Stock'}</span>
             </button>
 
             <button
@@ -1000,196 +1024,265 @@ export default function StockPage({
                   setIsSetStockOpen(false);
                 }
               }}
-              className={`px-3.5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border ${
+              className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border shrink-0 whitespace-nowrap active:scale-95 ${
                 isAddProductOpen
                   ? 'bg-slate-900 text-white border-slate-900 shadow-md'
                   : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200'
               }`}
             >
               <Plus size={14} />
-              <span>{isAddProductOpen ? 'Hide Product Form' : 'Add Product'}</span>
+              <span>{isAddProductOpen ? 'Hide Form' : 'Add Product'}</span>
             </button>
 
             {typeof onOpenAddToolSpare === 'function' && role !== 'customer' && (
               <button
                 type="button"
                 onClick={() => onOpenAddToolSpare('tools')}
-                className="px-3.5 py-2.5 rounded-xl text-xs font-extrabold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                title="Add Tools or Spares with simplified fields (no mobile display forms)"
+                className="px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-extrabold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 shrink-0 whitespace-nowrap"
+                title="Add Tools or Spares with simplified fields"
               >
                 <Wrench size={14} className="text-emerald-700" />
-                <span>Add Tool / Spare</span>
+                <span>Tool / Spare</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={() => setIsModelPickerOpen(true)}
-              className="px-3.5 py-2.5 rounded-xl text-xs font-extrabold bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              className="px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-extrabold bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 whitespace-nowrap"
             >
               <PackagePlus size={14} />
-              <span className="hidden sm:inline">Catalog Picker</span>
+              <span>Catalog Picker</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsReferenceOpen(!isReferenceOpen)}
+              className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border shrink-0 whitespace-nowrap active:scale-95 ${
+                isReferenceOpen
+                  ? 'bg-purple-700 text-white border-purple-800 shadow-md'
+                  : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200'
+              }`}
+              title="Manage Quality Variants, Brands & Colors"
+            >
+              <Layers size={14} />
+              <span>{isReferenceOpen ? 'Hide Variants' : 'Variants & Brands'}</span>
             </button>
 
             {role === 'superadmin' && (
               <button
                 type="button"
                 onClick={() => setTransferDrawerOpen(true)}
-                className="px-3.5 py-2.5 rounded-xl text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 whitespace-nowrap"
               >
                 <Send size={14} />
-                <span className="hidden sm:inline">Transfer</span>
+                <span>Transfer</span>
               </button>
             )}
 
-            {/* View Mode Toggle Segmented Control */}
-            <div className="view-mode-toggle ml-1">
+            {/* View Mode Toggle Segmented Control (Accessible on all screens) */}
+            <div className="view-mode-toggle shrink-0 ml-auto sm:ml-1 flex items-center bg-white/90 border border-slate-200/90 rounded-xl p-0.5 shadow-2xs">
               <button
                 type="button"
-                className={`view-mode-btn ${viewMode === 'table' ? 'active' : ''}`}
-                onClick={() => handleViewModeChange('table')}
-                title="Dense Data Table View"
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-teal-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                onClick={() => handleViewModeChange('cards')}
+                title="Whole Cards View"
               >
-                <Table size={15} />
-                <span className="hidden sm:inline">Table</span>
+                <LayoutGrid size={14} />
+                <span>Cards</span>
               </button>
               <button
                 type="button"
-                className={`view-mode-btn ${viewMode === 'cards' ? 'active' : ''}`}
-                onClick={() => handleViewModeChange('cards')}
-                title="Compact Card View"
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-teal-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                onClick={() => handleViewModeChange('table')}
+                title="Full Data Table View"
               >
-                <LayoutGrid size={15} />
-                <span className="hidden sm:inline">Cards</span>
+                <Table size={14} />
+                <span>Table</span>
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ==================== 2. INTERACTIVE BENTO KPI CARDS ==================== */}
-      <div className="kpi-bento-grid mb-6">
-        {/* Card 1: Total Units */}
+      {/* ==================== 2. INTERACTIVE COMPACT BENTO KPI CARDS ==================== */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 mb-3 sm:mb-5">
+        {/* Card 1: Total Units (Full-width sleek horizontal bar on mobile) */}
         <div 
-          className="kpi-bento-card"
+          className="col-span-2 sm:col-span-1 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-500/10 via-white to-white border border-teal-200/80 shadow-2xs cursor-pointer hover:border-teal-400 transition-all flex items-center justify-between text-left"
           onClick={() => setStockFilters(prev => ({ ...prev, status: '' }))}
           title="Click to view all products"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Units</span>
-            <div className="kpi-icon-badge bg-teal-50 text-teal-600 border border-teal-100">
-              <Boxes size={18} />
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-400 block leading-tight">Total Units</span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
+                {totalStockItemsQty.toLocaleString('en-IN')}
+              </span>
+              <span className="text-[10.5px] font-bold text-teal-700 sm:hidden">pcs live</span>
             </div>
-          </div>
-          <div className="mt-2.5">
-            <span className="text-2xl font-black text-slate-900 tracking-tight block">
-              {totalStockItemsQty.toLocaleString('en-IN')}
-            </span>
-            <span className="text-[11px] font-semibold text-slate-500 mt-0.5 block">
+            <span className="text-[10px] text-slate-400 font-semibold hidden sm:block truncate mt-0.5">
               Live pieces across all models
             </span>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center shrink-0">
+            <Boxes size={16} />
           </div>
         </div>
 
         {/* Card 2: Catalog SKUs */}
         <div 
-          className="kpi-bento-card"
+          className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/80 shadow-2xs cursor-pointer hover:border-indigo-300 transition-all flex items-center justify-between text-left"
           onClick={() => setStockFilters(prev => ({ ...prev, status: '' }))}
           title="Click to reset status filters"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Catalog SKUs</span>
-            <div className="kpi-icon-badge bg-indigo-50 text-indigo-600 border border-indigo-100">
-              <Smartphone size={18} />
-            </div>
-          </div>
-          <div className="mt-2.5">
-            <span className="text-2xl font-black text-slate-900 tracking-tight block">
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-400 block leading-tight">Catalog SKUs</span>
+            <span className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight mt-0.5 block">
               {Number(stockPager.total || stockWithOwnership.length).toLocaleString('en-IN')}
             </span>
-            <span className="text-[11px] font-semibold text-slate-500 mt-0.5 block">
-              Total active catalog products
+            <span className="text-[10px] text-slate-400 font-semibold hidden sm:block truncate mt-0.5">
+              Active models
             </span>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0">
+            <Smartphone size={16} />
           </div>
         </div>
 
         {/* Card 3: Healthy Stock */}
         <div 
-          className={`kpi-bento-card ${stockFilters.status === 'in_stock' ? 'active' : ''}`}
+          className={`p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border shadow-2xs cursor-pointer transition-all flex items-center justify-between text-left ${
+            stockFilters.status === 'in_stock'
+              ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400/20'
+              : 'bg-white border-slate-200/80 hover:border-emerald-300'
+          }`}
           onClick={() => setStockFilters(prev => ({ ...prev, status: prev.status === 'in_stock' ? '' : 'in_stock' }))}
           title="Click to filter In-Stock products"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">In Stock</span>
-            <div className="kpi-icon-badge bg-emerald-50 text-emerald-600 border border-emerald-100">
-              <CheckCircle2 size={18} />
-            </div>
-          </div>
-          <div className="mt-2.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-2xl font-black text-emerald-700 tracking-tight">
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-400 block leading-tight">In Stock</span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-lg sm:text-2xl font-black text-emerald-700 tracking-tight">
                 {healthyStockCount}
               </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
             </div>
-            <span className="text-[11px] font-semibold text-slate-500 mt-0.5 block">
-              Above warning threshold
+            <span className="text-[10px] text-slate-400 font-semibold hidden sm:block truncate mt-0.5">
+              Above threshold
             </span>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
+            <CheckCircle2 size={16} />
           </div>
         </div>
 
         {/* Card 4: Low Stock Alert (Interactive!) */}
         <div 
-          className={`kpi-bento-card ${stockFilters.status === 'low_stock' ? 'active' : ''} ${lowStockCount > 0 ? 'border-amber-200/90' : ''}`}
+          className={`p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border shadow-2xs cursor-pointer transition-all flex items-center justify-between text-left ${
+            stockFilters.status === 'low_stock'
+              ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/20'
+              : lowStockCount > 0
+              ? 'bg-amber-50/40 border-amber-200/90 hover:border-amber-300'
+              : 'bg-white border-slate-200/80'
+          }`}
           onClick={() => setStockFilters(prev => ({ ...prev, status: prev.status === 'low_stock' ? '' : 'low_stock' }))}
           title="Click to filter Low Stock products"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-amber-700">Low Stock Alert</span>
-            <div className="kpi-icon-badge bg-amber-50 text-amber-600 border border-amber-200">
-              <AlertTriangle size={18} />
-            </div>
-          </div>
-          <div className="mt-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-black text-amber-700 tracking-tight">
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-amber-700 block leading-tight">Low Stock</span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-lg sm:text-2xl font-black text-amber-700 tracking-tight">
                 {lowStockCount}
               </span>
               {lowStockCount > 0 && (
-                <span className="relative flex h-2.5 w-2.5">
+                <span className="relative flex h-2 w-2 shrink-0">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                 </span>
               )}
             </div>
-            <span className="text-[11px] font-semibold text-slate-500 mt-0.5 block">
-              Restock recommended
+            <span className="text-[10px] text-amber-600 font-semibold hidden sm:block truncate mt-0.5">
+              Restock advised
             </span>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center shrink-0">
+            <AlertTriangle size={16} />
           </div>
         </div>
 
         {/* Card 5: Out of Stock (Interactive!) */}
         <div 
-          className={`kpi-bento-card ${stockFilters.status === 'out_of_stock' ? 'active' : ''} ${outOfStockCount > 0 ? 'border-rose-200/90' : ''}`}
+          className={`p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border shadow-2xs cursor-pointer transition-all flex items-center justify-between text-left ${
+            stockFilters.status === 'out_of_stock'
+              ? 'bg-rose-50 border-rose-400 ring-2 ring-rose-400/20'
+              : outOfStockCount > 0
+              ? 'bg-rose-50/40 border-rose-200/90 hover:border-rose-300'
+              : 'bg-white border-slate-200/80'
+          }`}
           onClick={() => setStockFilters(prev => ({ ...prev, status: prev.status === 'out_of_stock' ? '' : 'out_of_stock' }))}
           title="Click to filter Out of Stock products"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-rose-700">Out of Stock</span>
-            <div className="kpi-icon-badge bg-rose-50 text-rose-600 border border-rose-200">
-              <XCircle size={18} />
-            </div>
-          </div>
-          <div className="mt-2.5">
-            <span className="text-2xl font-black text-rose-700 tracking-tight block">
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-rose-700 block leading-tight">Out of Stock</span>
+            <span className="text-lg sm:text-2xl font-black text-rose-700 tracking-tight mt-0.5 block">
               {outOfStockCount}
             </span>
-            <span className="text-[11px] font-semibold text-slate-500 mt-0.5 block">
-              0 quantity available
+            <span className="text-[10px] text-rose-500 font-semibold hidden sm:block truncate mt-0.5">
+              0 quantity
             </span>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
+            <XCircle size={16} />
           </div>
         </div>
       </div>
+
+      {/* Active Filter Indicator Banner */}
+      {(stockFilters.status || stockFilters.category || stockFilters.brand || stockFilters.colour || stockFilters.search) && (
+        <div className="flex items-center justify-between gap-2 p-2.5 sm:p-3 mb-4 rounded-2xl bg-teal-50/80 border border-teal-200/80 text-teal-900 text-xs font-bold shadow-2xs">
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+            <span className="text-[11px] uppercase tracking-wider text-teal-700 font-black flex items-center gap-1">
+              <Filter size={12} /> Filter Active:
+            </span>
+            {stockFilters.status && (
+              <span className="px-2 py-0.5 rounded-full bg-white text-teal-800 border border-teal-200 font-extrabold text-[11px] shadow-2xs">
+                Status: {stockFilters.status === 'in_stock' ? 'In Stock' : stockFilters.status === 'low_stock' ? 'Low Stock' : stockFilters.status === 'out_of_stock' ? 'Out of Stock' : stockFilters.status}
+              </span>
+            )}
+            {stockFilters.category && (
+              <span className="px-2 py-0.5 rounded-full bg-white text-teal-800 border border-teal-200 font-extrabold text-[11px] shadow-2xs">
+                {stockFilters.category}
+              </span>
+            )}
+            {stockFilters.brand && (
+              <span className="px-2 py-0.5 rounded-full bg-white text-teal-800 border border-teal-200 font-extrabold text-[11px] shadow-2xs">
+                {stockFilters.brand}
+              </span>
+            )}
+            {stockFilters.search && (
+              <span className="px-2 py-0.5 rounded-full bg-white text-teal-800 border border-teal-200 font-extrabold text-[11px] shadow-2xs truncate max-w-[150px]">
+                "{stockFilters.search}"
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setStockFilters({ search: '', brand: '', category: '', colour: '', status: '', shopkeeperId: '', ownership: '' })}
+            className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[11px] cursor-pointer shrink-0 active:scale-95 transition-all shadow-2xs"
+          >
+            Clear All
+          </button>
+        </div>
+      )}
 
       {/* Shopkeeper Stock Summary */}
       {role === 'shopkeeper' && (
@@ -1579,8 +1672,8 @@ export default function StockPage({
       </section>
       )}
 
-      {/* Collapsible Unified Workspace Panels */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+      {/* Collapsible Unified Workspace Panels: On mobile, only open forms render to keep product inventory visible */}
+      <section className={`flex flex-col gap-4 mb-6 ${(!isAddProductOpen && !isReferenceOpen && !isExportOpen) ? 'hidden md:flex' : 'flex'}`}>
         
         {/* PANEL 1: Add/Edit Product Panel */}
         <div className="panel stock-product-panel">
@@ -2471,7 +2564,7 @@ export default function StockPage({
         </div>
 
         {/* Quick Category Chips Row */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none no-scrollbar">
           {quickCategories.map((cat) => {
             const Icon = cat.icon;
             const isActive = (!cat.id && !stockFilters.category) || (cat.id && stockFilters.category.toLowerCase() === cat.id.toLowerCase());
@@ -2547,82 +2640,127 @@ export default function StockPage({
         </section>
       )}
 
-      {/* DUAL VIEW MODE: Dense Table vs Compact Cards */}
+      {/* Results Count & View Mode Quick Switcher Bar */}
+      {Boolean(stockWithOwnership.length) && (
+        <div className="flex items-center justify-between gap-2 mb-3.5 px-0.5">
+          <div className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+            <span>Showing {stockWithOwnership.length} of {stockPager.total || stockWithOwnership.length} Products</span>
+          </div>
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => handleViewModeChange('cards')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'cards' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <LayoutGrid size={13} />
+              <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleViewModeChange('table')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'table' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Table size={13} />
+              <span>Table</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ADAPTIVE VIEW MODE: Full Data Table with Swipe Support OR Whole Cards Grid */}
       {stockWithOwnership.length ? (
-        viewMode === 'table' ? (
-          /* ==================== 1. DENSE DATA TABLE MODE (DEFAULT) ==================== */
-          <div className="stock-table-wrapper overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50/95 border-b border-slate-200 backdrop-blur-sm sticky top-0 z-10">
-                <tr>
-                  <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '36%' }}>
-                    Product & Compatibility
-                  </th>
-                  <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '15%' }}>
-                    Category & Brand
-                  </th>
-                  <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '15%' }}>
-                    Variants & Colours
-                  </th>
-                  <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '14%' }}>
-                    {showCost ? 'Price & Margin' : 'Price (W/S & Ret)'}
-                  </th>
-                  <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '12%' }}>
-                    Stock Status
-                  </th>
-                  <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500 text-right" style={{ width: '8%' }}>
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {stockWithOwnership.map((item) => (
-                  <StockTableRow
-                    key={item.id}
-                    item={item}
-                    data={data}
-                    role={role}
-                    shopId={shopId}
-                    productName={productName}
-                    priceLabel={priceLabel}
-                    onCloneProduct={onCloneProduct}
-                    onEditProduct={onEditProduct}
-                    handleDeleteProductConfirm={handleDeleteProductConfirm}
-                    setForms={setForms}
-                    setColorSplitQuantities={setColorSplitQuantities}
-                    setIsSetStockOpen={setIsSetStockOpen}
-                    setIsAddProductOpen={setIsAddProductOpen}
-                    setEditingProductId={setEditingProductId}
-                    showCost={showCost}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          /* ==================== 2. COMPACT VISUAL CARD MODE ==================== */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4.5">
-            {stockWithOwnership.map((item) => (
-              <StockCardItem
-                key={item.id}
-                item={item}
-                data={data}
-                role={role}
-                productName={productName}
-                priceLabel={priceLabel}
-                onCloneProduct={onCloneProduct}
-                onEditProduct={onEditProduct}
-                handleDeleteProductConfirm={handleDeleteProductConfirm}
-                setForms={setForms}
-                setColorSplitQuantities={setColorSplitQuantities}
-                setIsSetStockOpen={setIsSetStockOpen}
-                setIsAddProductOpen={setIsAddProductOpen}
-                setEditingProductId={setEditingProductId}
-                showCost={showCost}
-              />
-            ))}
-          </div>
-        )
+        <>
+          {viewMode === 'table' ? (
+            /* ==================== 1. FULL DATA TABLE (RESPONSIVE HORIZONTAL SCROLL) ==================== */
+            <div className="stock-table-wrapper w-full overflow-x-auto rounded-2xl border border-slate-200/90 bg-white shadow-2xs no-scrollbar sm:scrollbar-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {/* Mobile Swipe Banner */}
+              <div className="flex md:hidden items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-teal-50 to-emerald-50 border-b border-teal-100 text-teal-900 text-xs font-bold">
+                <span className="flex items-center gap-2">
+                  <ArrowLeftRight size={14} className="text-teal-600 animate-pulse" />
+                  <span>Swipe horizontally to view all columns & details</span>
+                </span>
+                <span className="text-[10px] bg-teal-600 text-white px-2 py-0.5 rounded-full font-black">
+                  Dense Table
+                </span>
+              </div>
+              <table className="w-full text-left border-collapse min-w-[850px]">
+                <thead className="bg-slate-50/95 border-b border-slate-200 backdrop-blur-sm sticky top-0 z-10">
+                  <tr>
+                    <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '36%' }}>
+                      Product & Compatibility
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '15%' }}>
+                      Category & Brand
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '15%' }}>
+                      Variants & Colours
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '14%' }}>
+                      {showCost ? 'Price & Margin' : 'Price (W/S & Ret)'}
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500" style={{ width: '12%' }}>
+                      Stock Status
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-black uppercase tracking-wider text-slate-500 text-right" style={{ width: '8%' }}>
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stockWithOwnership.map((item) => (
+                    <StockTableRow
+                      key={item.id}
+                      item={item}
+                      data={data}
+                      role={role}
+                      shopId={shopId}
+                      productName={productName}
+                      priceLabel={priceLabel}
+                      onCloneProduct={onCloneProduct}
+                      onEditProduct={onEditProduct}
+                      handleDeleteProductConfirm={handleDeleteProductConfirm}
+                      setForms={setForms}
+                      setColorSplitQuantities={setColorSplitQuantities}
+                      setIsSetStockOpen={setIsSetStockOpen}
+                      setIsAddProductOpen={setIsAddProductOpen}
+                      setEditingProductId={setEditingProductId}
+                      showCost={showCost}
+                      onViewDetails={setSelectedProductDetails}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* ==================== 2. COMPACT VISUAL WHOLE CARD MODE ==================== */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4.5">
+              {stockWithOwnership.map((item) => (
+                <StockCardItem
+                  key={item.id}
+                  item={item}
+                  data={data}
+                  role={role}
+                  productName={productName}
+                  priceLabel={priceLabel}
+                  onCloneProduct={onCloneProduct}
+                  onEditProduct={onEditProduct}
+                  handleDeleteProductConfirm={handleDeleteProductConfirm}
+                  setForms={setForms}
+                  setColorSplitQuantities={setColorSplitQuantities}
+                  setIsSetStockOpen={setIsSetStockOpen}
+                  setIsAddProductOpen={setIsAddProductOpen}
+                  setEditingProductId={setEditingProductId}
+                  showCost={showCost}
+                  onViewDetails={setSelectedProductDetails}
+                />
+              ))}
+            </div>
+          )}
+        </>
       ) : (
         <Empty title="No stock matching your criteria found" />
       )}

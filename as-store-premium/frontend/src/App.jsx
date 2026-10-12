@@ -1133,11 +1133,34 @@ const SaleItemRow = React.memo(function SaleItemRow({
   const isOverStock = Boolean(item.product_id) && availableStock > 0 && currentQty > availableStock;
 
   return (
-    <div className="bg-slate-50/60 border border-slate-200/70 rounded-xl p-2.5 sm:p-3 space-y-2.5 transition-all hover:border-slate-300">
+    <div className="bg-slate-50/70 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 space-y-3 transition-all hover:border-slate-300 shadow-2xs">
+      {/* Mobile-only item card header with item index, line total, and delete button */}
+      <div className="flex sm:hidden items-center justify-between gap-2 pb-1 border-b border-slate-200/60 dark:border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className="w-5 h-5 rounded-full bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400 font-extrabold text-[10px] flex items-center justify-center border border-teal-200/60">
+            {idx + 1}
+          </span>
+          <span className="text-xs font-bold text-slate-500">Item #{idx + 1}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black text-slate-900 dark:text-white px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200/80">
+            ₹{Number(item.total_amount || 0).toLocaleString('en-IN')}
+          </span>
+          <button
+            type="button"
+            onClick={() => removeSaleItem(idx)}
+            className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+            title={itemsLength > 1 ? "Remove item" : "Clear item"}
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-end gap-2 sm:gap-2.5">
         {/* Product Selector with wider container */}
-        <div className="flex-[3] w-full sm:w-auto min-w-0 sm:min-w-[360px] lg:min-w-[480px]">
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Product / Model</label>
+        <div className="flex-1 w-full sm:w-auto min-w-0 sm:min-w-[340px] lg:min-w-[440px]">
+          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Product / Model</label>
           <SearchableCombobox
             id={`sale-product-combobox-${idx}`}
             autoOpen={Boolean(item.autoFocusProduct)}
@@ -1163,7 +1186,7 @@ const SaleItemRow = React.memo(function SaleItemRow({
         {/* Color / Variant Selector Dropdown - only when selected product has colors */}
         {Boolean(item.product_id) && availableColors.length > 0 && (
           <div className="w-full sm:w-[140px]">
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Color / Variant</label>
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Color / Variant</label>
             <select
               value={currentVariantValue}
               onChange={(e) => {
@@ -1178,7 +1201,7 @@ const SaleItemRow = React.memo(function SaleItemRow({
                   toggleSaleItemColor(idx, val);
                 }
               }}
-              className="w-full h-10 px-2.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl focus:border-teal-500 focus:outline-none cursor-pointer"
+              className="w-full h-10 px-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:border-teal-500 focus:outline-none cursor-pointer"
             >
               {availableColors.map((c) => (
                 <option key={c} value={c}>
@@ -1192,106 +1215,109 @@ const SaleItemRow = React.memo(function SaleItemRow({
           </div>
         )}
 
-        {/* Price Tier */}
-        <div className="w-[calc(50%-4px)] sm:w-[115px]">
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Price Tier</label>
-          <select
-            value={item.price_type || 'wholesale'}
-            onChange={(e) => updateSaleItemPriceType(idx, e.target.value)}
-            disabled={!item.product_id}
-            className="w-full h-10 px-2.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl focus:border-teal-500 focus:outline-none cursor-pointer disabled:opacity-50"
-          >
-            <option value="wholesale">Wholesale</option>
-            <option value="retail">Retail</option>
-          </select>
-        </div>
-
-        {/* Selling Price */}
-        <div className="w-[calc(50%-4px)] sm:w-[105px]">
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Price (₹)</label>
-          <input
-            id={`sale-item-price-${idx}`}
-            type="number"
-            placeholder="₹ 0"
-            value={item.selling_price !== undefined ? item.selling_price : ''}
-            onChange={(e) => updateSaleItemSellingPrice(idx, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                const qtyInput = document.getElementById(`sale-item-qty-${idx}`);
-                if (qtyInput) {
-                  qtyInput.focus();
-                  qtyInput.select();
-                }
-              }
-            }}
-            disabled={!item.product_id}
-            className="w-full h-10 px-2.5 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl focus:border-teal-500 focus:outline-none disabled:opacity-50 text-right"
-          />
-        </div>
-
-        {/* Quantity with live workspace stock guard */}
-        <div className="w-[calc(50%-4px)] sm:w-[88px]">
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-[11px] font-semibold text-slate-600">Qty</label>
-            {Boolean(item.product_id) && (
-              <span
-                className={`text-[9.5px] font-bold ${
-                  isOutOfStock
-                    ? 'text-rose-600'
-                    : isOverStock
-                    ? 'text-rose-600'
-                    : 'text-slate-400'
-                }`}
-                title={`Available in current workspace: ${availableStock}`}
-              >
-                {isOutOfStock ? '0 Left' : `Max: ${availableStock}`}
-              </span>
-            )}
+        {/* Responsive Controls Grid: 3 columns on mobile */}
+        <div className="grid grid-cols-3 sm:flex items-end gap-2 sm:gap-2.5 w-full sm:w-auto">
+          {/* Price Tier */}
+          <div className="sm:w-[110px]">
+            <label className="block text-[10px] sm:text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Tier</label>
+            <select
+              value={item.price_type || 'wholesale'}
+              onChange={(e) => updateSaleItemPriceType(idx, e.target.value)}
+              disabled={!item.product_id}
+              className="w-full h-10 px-2 sm:px-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:border-teal-500 focus:outline-none cursor-pointer disabled:opacity-50"
+            >
+              <option value="wholesale">W/S</option>
+              <option value="retail">Retail</option>
+            </select>
           </div>
-          <input
-            id={`sale-item-qty-${idx}`}
-            type="number"
-            min="0"
-            max={item.product_id ? availableStock : undefined}
-            placeholder=""
-            value={item.quantity !== undefined && item.quantity !== null && item.quantity !== '' && item.quantity !== 0 ? item.quantity : ''}
-            onChange={(e) => updateSaleItemQuantity(idx, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (onQuantityEnter) onQuantityEnter(idx);
+
+          {/* Selling Price */}
+          <div className="sm:w-[105px]">
+            <label className="block text-[10px] sm:text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Price (₹)</label>
+            <input
+              id={`sale-item-price-${idx}`}
+              type="number"
+              placeholder="₹ 0"
+              value={item.selling_price !== undefined ? item.selling_price : ''}
+              onChange={(e) => updateSaleItemSellingPrice(idx, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const qtyInput = document.getElementById(`sale-item-qty-${idx}`);
+                  if (qtyInput) {
+                    qtyInput.focus();
+                    qtyInput.select();
+                  }
+                }
+              }}
+              disabled={!item.product_id}
+              className="w-full h-10 px-2 sm:px-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:border-teal-500 focus:outline-none disabled:opacity-50 text-right"
+            />
+          </div>
+
+          {/* Quantity with live workspace stock guard */}
+          <div className="sm:w-[88px]">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[10px] sm:text-[11px] font-semibold text-slate-600 dark:text-slate-400">Qty</label>
+              {Boolean(item.product_id) && (
+                <span
+                  className={`text-[9px] font-bold truncate ${
+                    isOutOfStock
+                      ? 'text-rose-600'
+                      : isOverStock
+                      ? 'text-rose-600'
+                      : 'text-slate-400'
+                  }`}
+                  title={`Available in current workspace: ${availableStock}`}
+                >
+                  {isOutOfStock ? '0' : availableStock}
+                </span>
+              )}
+            </div>
+            <input
+              id={`sale-item-qty-${idx}`}
+              type="number"
+              min="0"
+              max={item.product_id ? availableStock : undefined}
+              placeholder=""
+              value={item.quantity !== undefined && item.quantity !== null && item.quantity !== '' && item.quantity !== 0 ? item.quantity : ''}
+              onChange={(e) => updateSaleItemQuantity(idx, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (onQuantityEnter) onQuantityEnter(idx);
+                }
+              }}
+              disabled={!item.product_id || activeBreakdown.length > 1}
+              title={
+                activeBreakdown.length > 1
+                  ? "Quantity is calculated automatically from color breakdown below"
+                  : item.product_id
+                  ? `Enter quantity (Available stock in workspace: ${availableStock})`
+                  : "Select a product first"
               }
-            }}
-            disabled={!item.product_id || activeBreakdown.length > 1}
-            title={
-              activeBreakdown.length > 1
-                ? "Quantity is calculated automatically from color breakdown below"
-                : item.product_id
-                ? `Enter quantity (Available stock in workspace: ${availableStock})`
-                : "Select a product first"
-            }
-            className={`w-full h-10 px-2 text-xs font-bold bg-white border rounded-xl focus:outline-none disabled:opacity-70 text-center transition-colors ${
-              isOutOfStock || isOverStock
-                ? 'border-rose-400 bg-rose-50/50 text-rose-700 focus:border-rose-500'
-                : 'text-slate-800 border-slate-200 focus:border-teal-500'
-            }`}
-          />
+              className={`w-full h-10 px-2 text-xs font-bold bg-white dark:bg-slate-800 border rounded-xl focus:outline-none disabled:opacity-70 text-center transition-colors ${
+                isOutOfStock || isOverStock
+                  ? 'border-rose-400 bg-rose-50/50 text-rose-700 focus:border-rose-500'
+                  : 'text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700 focus:border-teal-500'
+              }`}
+            />
+          </div>
         </div>
 
-        {/* Total Amount */}
-        <div className="w-[calc(50%-44px)] sm:w-[110px]">
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Total (₹)</label>
-          <div className="w-full h-10 px-2.5 flex items-center justify-end bg-slate-100/90 border border-slate-200 rounded-xl text-xs font-black text-slate-900 truncate">
+        {/* Total Amount (Desktop) */}
+        <div className="hidden sm:block sm:w-[110px]">
+          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Total (₹)</label>
+          <div className="w-full h-10 px-2.5 flex items-center justify-end bg-slate-100/90 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-black text-slate-900 dark:text-white truncate">
             ₹{Number(item.total_amount || 0).toLocaleString('en-IN')}
           </div>
         </div>
 
-        {/* Trash / Remove Row Button */}
+        {/* Trash / Remove Row Button (Desktop) */}
         <button
           type="button"
           onClick={() => removeSaleItem(idx)}
-          className="h-10 w-9 sm:w-auto px-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl border border-transparent hover:border-rose-200 transition-all cursor-pointer flex items-center justify-center shrink-0"
+          className="hidden sm:flex h-10 px-2.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl border border-transparent hover:border-rose-200 transition-all cursor-pointer items-center justify-center shrink-0"
           title={itemsLength > 1 ? "Remove item" : "Clear item"}
         >
           <Trash2 size={16} />
@@ -2271,8 +2297,8 @@ function SalesCreationWorkspace({
 
         {/* Right Sticky Sidebar: Bill Summary & Accounting */}
         <div className="lg:col-span-4 sticky top-4 space-y-3.5">
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs space-y-3.5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div id="sale-bill-summary-card" className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3.5">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Bill Summary</span>
                 {loadingBalance && <Loader2 size={12} className="animate-spin text-teal-600" />}
@@ -2627,6 +2653,34 @@ function SalesCreationWorkspace({
           </div>
         </div>
       </div>
+
+      {/* Floating Mobile Checkout Quick-Bar for POS billing */}
+      {items.some((i) => i.product_id) && (
+        <div className="lg:hidden fixed bottom-[76px] left-3 right-3 z-30 bg-slate-900/95 dark:bg-slate-950/95 text-white p-3 rounded-2xl shadow-2xl backdrop-blur-md border border-slate-700/80 flex items-center justify-between gap-3 animate-fadeIn">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-extrabold text-teal-400 uppercase tracking-wider">Net Payable</span>
+              <span className="text-[10px] text-slate-400">({items.filter((i) => i.product_id).length} {items.filter((i) => i.product_id).length === 1 ? 'item' : 'items'})</span>
+            </div>
+            <div className="text-base font-black text-white truncate">
+              {currency(netPayable)}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const summaryCard = document.getElementById('sale-bill-summary-card');
+              if (summaryCard) {
+                summaryCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }}
+            className="px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer"
+          >
+            <span>Review & Pay</span>
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
       {showBulkAddModal && (
         <BulkAddProductsModal
           isOpen={showBulkAddModal}
@@ -3556,6 +3610,11 @@ function App() {
     const queryString = options.queryString || (rawTarget.includes('?') ? `?${rawTarget.split('?')[1]}` : '');
     setActive(target);
     syncActivePath(target, options.replace ? 'replace' : 'push', queryString);
+    const mainWorkspace = document.querySelector('main.workspace') || document.querySelector('.workspace');
+    if (mainWorkspace) {
+      mainWorkspace.scrollTo({ top: 0, behavior: 'instant' });
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   const authedFetch = (path, options = {}) => api(path, options, token);
@@ -6336,7 +6395,7 @@ function App() {
   };
 
   const deleteProduct = (product) => {
-    if (role !== 'superadmin') return;
+    if (role !== 'superadmin' && role !== 'shopkeeper' && role !== 'admin') return;
     const name = productName(product);
     const productId = product.product_id || product.id;
     requestConfirmation({
@@ -8257,12 +8316,12 @@ function App() {
       <main className="workspace">
         <header className="topbar">
           <button type="button" className="icon mobile-only" onClick={() => setOpen(true)}><Menu size={20} /></button>
-          <div className="page-title">
-            <span className="eyebrow">{currentPageMeta.group} / {pageWorkspaceScope}</span>
-            <h1>{currentPageMeta.title}</h1>
-            <p>{currentPageMeta.description}</p>
+          <div className="page-title min-w-0">
+            <span className="eyebrow hidden sm:block">{currentPageMeta.group} / {pageWorkspaceScope}</span>
+            <h1 className="text-sm sm:text-lg font-black text-slate-900 truncate">{currentPageMeta.title}</h1>
+            <p className="hidden md:block">{currentPageMeta.description}</p>
           </div>
-          <div className="topbar-actions">
+          <div className="topbar-actions ml-auto flex items-center gap-1.5 sm:gap-2">
             {role !== 'customer' && lowStockAlerts.length > 0 && (
               <button
                 type="button"
@@ -8270,13 +8329,13 @@ function App() {
                 onClick={() => setActivePage('low-stock')}
                 title="View Low & Out of Stock Alerts"
               >
-                <AlertTriangle size={16} />
+                <AlertTriangle size={15} />
                 <span>{lowStockAlerts.length}</span>
               </button>
             )}
             {role !== 'customer' && (
               <div
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
+                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
                   realtimeStatus === 'connected'
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-2xs'
                     : realtimeStatus === 'connecting'
@@ -8305,9 +8364,16 @@ function App() {
                 </span>
               </div>
             )}
-            <div className="user-pill">
+            <div className="user-pill hidden sm:flex">
               <ShieldCheck size={16} />
               <span><b>{session.name}</b><small>{role === 'superadmin' ? 'Owner' : role === 'shopkeeper' ? 'Shopkeeper' : 'Customer'}</small></span>
+            </div>
+            {/* Mobile User Monogram Avatar */}
+            <div 
+              className="sm:hidden w-8 h-8 rounded-xl bg-teal-500/10 text-teal-700 border border-teal-200/80 flex items-center justify-center font-extrabold text-xs shadow-2xs shrink-0"
+              title={`${session.name} (${role})`}
+            >
+              {session.name ? session.name.charAt(0).toUpperCase() : 'U'}
             </div>
           </div>
         </header>
@@ -8769,6 +8835,7 @@ function App() {
                 api={authedFetch}
                 data={data}
                 onBrandChange={loadCore}
+                selectedShop={selectedShop}
               />
             </PageWrapper>
           )}
@@ -8847,6 +8914,8 @@ function App() {
                 session={session}
                 api={authedFetch}
                 setGlobalToast={showToast}
+                selectedShop={selectedShop}
+                shops={data.shops || []}
               />
             </PageWrapper>
           )}
@@ -11939,13 +12008,14 @@ function App() {
         </AnimatePresence>
       </main>
 
-      {/* Modern Mobile Bottom Navigation Bar */}
+      {/* Modern Mobile Bottom Navigation Bar (Floating Island Dock) */}
       <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
         {mobileNavItems.map(({ id, label, Icon, action, badge }) => {
           const isActive = id === 'more' ? open : (active === id && !open);
           return (
-            <button
+            <motion.button
               key={id}
+              whileTap={{ scale: 0.88 }}
               type="button"
               className={`mobile-nav-btn ${isActive ? 'active' : ''}`}
               onClick={() => {
@@ -11958,18 +12028,24 @@ function App() {
               }}
             >
               <div className="relative flex items-center justify-center">
-                <Icon size={20} className={isActive ? 'text-teal-600 dark:text-teal-400' : 'text-slate-500 dark:text-slate-400'} />
+                <Icon size={20} className={isActive ? 'text-teal-600 dark:text-teal-400 stroke-[2.3]' : 'text-slate-500 dark:text-slate-400 stroke-[1.8]'} />
                 {badge > 0 && (
-                  <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  <span className="absolute -top-1.5 -right-2.5 bg-rose-500 text-white text-[9px] font-black rounded-full h-4 min-w-4 px-1 flex items-center justify-center shadow-xs animate-pulse">
                     {badge > 9 ? '9+' : badge}
                   </span>
                 )}
               </div>
-              <span className={`text-[10px] font-bold tracking-tight ${isActive ? 'text-teal-700 dark:text-teal-400' : 'text-slate-600 dark:text-slate-300'}`}>
+              <span className={`text-[10px] font-bold tracking-tight transition-colors ${isActive ? 'text-teal-700 dark:text-teal-400 font-black' : 'text-slate-500 dark:text-slate-400'}`}>
                 {label}
               </span>
-              {isActive && <span className="mobile-nav-dot" />}
-            </button>
+              {isActive && (
+                <motion.span
+                  layoutId="mobileNavActivePill"
+                  className="mobile-nav-dot"
+                  transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                />
+              )}
+            </motion.button>
           );
         })}
       </nav>
