@@ -158,6 +158,11 @@ export default function PublicInvoiceViewPage() {
     : Math.max(0, Number(invoice.total_amount || 0) - Number(invoice.paid_amount || 0));
   const isPaid = balanceDue <= 0;
 
+  const rawShopName = (invoice.shop?.name || '').trim();
+  const shopDisplayName = (!rawShopName || /^warehouse$/i.test(rawShopName) || rawShopName.toLowerCase().includes('warehouse'))
+    ? 'Pinky Sales'
+    : rawShopName;
+
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-zinc-950 py-6 px-3 sm:px-6 flex flex-col items-center font-sans">
       {/* Top Action Bar (Hidden when printing) */}
@@ -206,14 +211,14 @@ export default function PublicInvoiceViewPage() {
                   PS
                 </div>
                 <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">
-                  {invoice.shop?.name || 'PINKY SALES'}
+                  {shopDisplayName}
                 </h2>
               </div>
               <p className="text-xs font-semibold text-emerald-700 mb-1">Premium Mobile & Display Solutions</p>
               {invoice.shop?.address && (
                 <p className="text-xs text-slate-500 max-w-sm flex items-start gap-1">
                   <MapPin size={13} className="shrink-0 mt-0.5 text-slate-400" />
-                  <span>{invoice.shop.address} {invoice.shop.area ? `(${invoice.shop.area})` : ''}</span>
+                  <span>{invoice.shop.address} {invoice.shop.area && !/central\s*inventory/i.test(invoice.shop.area) ? `(${invoice.shop.area})` : ''}</span>
                 </p>
               )}
               {invoice.shop?.phone && (
@@ -430,8 +435,8 @@ export default function PublicInvoiceViewPage() {
 
         {/* Footer */}
         <footer className="p-6 bg-slate-50/70 border-t border-slate-200 text-center text-[11px] text-slate-400">
-          <p>Thank you for choosing {invoice.shop?.name || 'Pinky Sales'}!</p>
-          <p className="mt-1">For questions regarding this invoice, contact {invoice.shop?.phone || 'support'}.</p>
+          <p>Thank you for choosing {shopDisplayName}!</p>
+          <p className="mt-1">For questions regarding this invoice, contact {invoice.shop?.phone || '+91 90995 69700'}.</p>
         </footer>
       </main>
     </div>

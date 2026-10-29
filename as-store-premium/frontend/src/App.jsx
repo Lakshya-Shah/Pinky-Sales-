@@ -6484,7 +6484,9 @@ function App() {
     const cleanMobile = mobile.startsWith('91') && mobile.length > 10 ? mobile : (mobile.length === 10 ? `91${mobile}` : mobile);
     const dueDateStr = item.due_date ? formatDateDMY(item.due_date) : 'earliest';
     const invoiceCount = item.items?.length || 1;
-    const msg = `Dear ${item.customer_name},\nThis is a friendly reminder from ${item.shop_name || 'Pinky Sales'}.\nYou have an outstanding pending balance of ${currency(item.pending_amount)} across ${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} (Due: ${dueDateStr}).\nKindly arrange for the payment at your earliest convenience.\nThank you!`;
+    const rawShopName = (item.shop_name || '').trim();
+    const senderShopName = (!rawShopName || /^warehouse$/i.test(rawShopName) || rawShopName.toLowerCase().includes('warehouse')) ? 'Pinky Sales' : rawShopName;
+    const msg = `Dear ${item.customer_name},\nThis is a friendly reminder from ${senderShopName}.\nYou have an outstanding pending balance of ${currency(item.pending_amount)} across ${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} (Due: ${dueDateStr}).\nKindly arrange for the payment at your earliest convenience.\nThank you!`;
     return cleanMobile ? `https://wa.me/${cleanMobile}?text=${encodeURIComponent(msg)}` : '#';
   };
 
@@ -6729,7 +6731,8 @@ function App() {
     const invDateStr = formatDateDMY(sale.invoice_date || sale.sale_date || new Date().toISOString().slice(0, 10));
     const dueDateStr = sale.due_date ? formatDateDMY(sale.due_date) : 'Not set';
     const termsStr = sale.payment_terms_days ? `${sale.payment_terms_days} Days` : '15 Days';
-    const shopName = sale.shop_name || 'Pinky Sales';
+    const rawShopName = (sale.shop_name || '').trim();
+    const shopName = (!rawShopName || /^warehouse$/i.test(rawShopName) || rawShopName.toLowerCase().includes('warehouse')) ? 'Pinky Sales' : rawShopName;
     const rawExpenses = Array.isArray(sale.expenses) ? sale.expenses : [];
     const expensesTotal = Number(sale.extra_expenses_total || rawExpenses.reduce((s, e) => s + Number(e.amount || 0), 0) || 0);
     const prodTotal = Number(sale.products_total || Math.max(Number(sale.total_amount || 0) - expensesTotal, 0));

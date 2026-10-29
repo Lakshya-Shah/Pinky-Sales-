@@ -4480,6 +4480,11 @@ app.get(['/api/public/invoice/:ref', '/api/invoices/public/:ref', '/public/invoi
     const customerBal = sale.customer_id ? await getCustomerTotalOutstanding(sale.customer_id, sale.shop_id) : null;
     const customerAccountOutstanding = customerBal ? customerBal.total_outstanding : 0;
 
+    const rawShopName = (sale.shop_name || '').trim();
+    const resolvedShopName = (!rawShopName || /^warehouse$/i.test(rawShopName) || rawShopName.toLowerCase().includes('warehouse'))
+      ? 'Pinky Sales'
+      : rawShopName;
+
     const enrichedInvoice = {
       ...sale,
       id: sale.id,
@@ -4520,7 +4525,7 @@ app.get(['/api/public/invoice/:ref', '/api/invoices/public/:ref', '/public/invoi
       },
       shop: {
         id: sale.shop_id,
-        name: sale.shop_name || 'Pinky Sales',
+        name: resolvedShopName,
         area: sale.shop_area || '',
         address: sale.shop_address || '',
         phone: sale.shop_phone || '',
@@ -9704,6 +9709,13 @@ app.put('/api/purchase-bills/:id', authenticateToken, requireShopStaff, async (r
         'SELECT DISTINCT product_id, shop_id FROM inventory_batches WHERE purchase_bill_id = ?',
         [billId]
       );
+      // Unlink any sale allocations before replacing batches to avoid RESTRICT FK errors
+      await tx.runQuery(
+        `DELETE FROM sale_batch_allocations WHERE batch_id IN (
+           SELECT id FROM inventory_batches WHERE purchase_bill_id = ?
+         )`,
+        [billId]
+      );
       // Remove previous batches for this bill
       await tx.runQuery('DELETE FROM inventory_batches WHERE purchase_bill_id = ?', [billId]);
 
@@ -9729,7 +9741,9 @@ app.put('/api/purchase-bills/:id', authenticateToken, requireShopStaff, async (r
 
       // Re-sync stock for any previously batched products
       for (const ob of oldBatches) {
-        await syncStockFromBatches(tx, ob.shop_id, ob.product_id);
+        if (ob.shop_id && ob.product_id) {
+          await syncStockFromBatches(tx, ob.shop_id, ob.product_id);
+        }
       }
 
       // Reverse existing purchase bill journal and post updated
@@ -9765,10 +9779,14 @@ app.delete(['/api/purchase-bills/:id', '/purchase-bills/:id'], authenticateToken
         throw err;
       }
 
-      // Check shop access
-      requireScopedShopId(req, bill.shop_id);
+      // Check shop access: Superadmin has unrestricted access; shopkeepers can only manage their shop
+      if (isShopStaffRole(req.user.role) && bill.shop_id && Number(bill.shop_id) !== Number(req.user.shop_id)) {
+        const err = new Error('You can only delete purchase bills belonging to your assigned shop.');
+        err.status = 403;
+        throw err;
+      }
 
-      // Find affected batches
+      // Find affected batches to sync stock later
       const affectedBatches = await tx.allRecords(
         'SELECT DISTINCT product_id, shop_id FROM inventory_batches WHERE purchase_bill_id = ?',
         [billId]
@@ -9777,6 +9795,27 @@ app.delete(['/api/purchase-bills/:id', '/purchase-bills/:id'], authenticateToken
       // Reverse journals
       await reverseJournal(tx, 'purchase_bill', billId, bill.shop_id, today(), req.user.id);
 
+      // Unlink any sale batch allocations pointing to batches of this purchase bill
+      // to avoid PostgreSQL foreign key constraint violation (RESTRICT) on inventory_batches(id)
+      await tx.runQuery(
+        `DELETE FROM sale_batch_allocations WHERE batch_id IN (
+           SELECT id FROM inventory_batches WHERE purchase_bill_id = ?
+         )`,
+        [billId]
+      );
+
+      // Unlink any debit notes referencing this purchase bill
+      await tx.runQuery(
+        'UPDATE debit_notes SET purchase_bill_id = NULL WHERE purchase_bill_id = ?',
+        [billId]
+      );
+
+      // Delete payment splits if any
+      await tx.runQuery(
+        'DELETE FROM payment_splits WHERE bill_id = ?',
+        [billId]
+      );
+
       // Delete batches, items, and bill
       await tx.runQuery('DELETE FROM inventory_batches WHERE purchase_bill_id = ?', [billId]);
       await tx.runQuery('DELETE FROM purchase_bill_items WHERE bill_id = ?', [billId]);
@@ -9784,7 +9823,9 @@ app.delete(['/api/purchase-bills/:id', '/purchase-bills/:id'], authenticateToken
 
       // Re-sync stock
       for (const b of affectedBatches) {
-        await syncStockFromBatches(tx, b.shop_id, b.product_id);
+        if (b.shop_id && b.product_id) {
+          await syncStockFromBatches(tx, b.shop_id, b.product_id);
+        }
       }
 
       return { id: billId, bill_number: bill.bill_number };
