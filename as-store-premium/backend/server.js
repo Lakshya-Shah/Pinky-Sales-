@@ -234,14 +234,18 @@ const parsePagination = (query = {}, options = {}) => {
 const appendSearchFilter = (where, params, search, columns) => {
   const query = cleanQueryText(search);
   if (!query) return;
-  const terms = query.split(/\s+/).filter(Boolean);
+  // Split into tokens by whitespace AND common model delimiters (/, \, -, +, comma)
+  // E.g. "v40/v30" or "v30/v40" decomposes into ["v40", "v30"] so products containing both
+  // are matched regardless of character order or delimiter spacing.
+  const rawTerms = query.split(/[\s,+/\\-]+/).map((t) => t.trim()).filter(Boolean);
+  const terms = rawTerms.length > 0 ? rawTerms : [query];
   if (terms.length === 0) return;
 
   terms.forEach((term) => {
     const clauses = [];
     columns.forEach((column) => {
       // Strip outer COALESCE around table columns so PostgreSQL GIN trigram indexes can be used directly
-      const directCol = column.replace(/^COALESCE\((p\.[a-z0-9_]+),\s*''\)$/i, '$1');
+      const directCol = column.replace(/^COALESCE\(([a-z0-9_]+\.[a-z0-9_]+),\s*''\)$/i, '$1');
       clauses.push(`${directCol} ILIKE ?`);
       params.push(`%${term}%`);
     });
@@ -3524,7 +3528,11 @@ app.get('/api/stock', authenticateToken, requireShopStaff, async (req, res) => {
       "COALESCE(p.short_name, '')",
       "COALESCE(p.full_model_list, '')",
       "COALESCE(p.brand, '')",
+      "COALESCE(b.name, '')",
+      "COALESCE(mb.name, '')",
       "COALESCE(p.category, '')",
+      "COALESCE(p.part_category, '')",
+      "COALESCE(p.quality_variant, '')",
       "COALESCE(p.model, '')",
       "COALESCE(p.description, '')",
       "COALESCE(sh.name, '')",

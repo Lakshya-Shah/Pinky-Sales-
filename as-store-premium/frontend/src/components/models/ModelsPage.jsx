@@ -66,7 +66,7 @@ export default function ModelsPage({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       onSearchChange(val);
-    }, 350);
+    }, 200);
   };
 
   const handleClearSearch = () => {

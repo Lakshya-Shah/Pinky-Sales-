@@ -149,6 +149,10 @@ export default function PurchaseBillsPage({
     setLoading(true);
     try {
       await api(`/purchase-bills/${bill.id}`, { method: 'DELETE' });
+      if (expandedId === bill.id) {
+        setExpandedId(null);
+        setExpandedItems([]);
+      }
       setGlobalToast && setGlobalToast({ type: 'success', message: `Purchase bill ${bill.bill_number} deleted successfully.` });
       fetchBills();
     } catch (e) {

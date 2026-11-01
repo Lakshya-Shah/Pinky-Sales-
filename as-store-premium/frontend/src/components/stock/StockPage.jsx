@@ -961,12 +961,26 @@ export default function StockPage({
     const list = allCatalogList.length > 0 ? allCatalogList : (data.products || []);
     if (!modelPickerSearch.trim()) return list;
     const term = modelPickerSearch.toLowerCase().trim();
+    const subTerms = term.split(/[\s,+/\\-]+/).filter(Boolean);
+    const cleanTerm = term.replace(/[^a-z0-9]/g, '');
+
     return list.filter((p) => {
-      const nameMatch = String(p.short_name || p.name || '').toLowerCase().includes(term);
-      const brandMatch = String(p.brand || '').toLowerCase().includes(term);
-      const catMatch = String(p.category || '').toLowerCase().includes(term);
-      const modelMatch = String(p.full_model_list || p.model || '').toLowerCase().includes(term);
-      return nameMatch || brandMatch || catMatch || modelMatch;
+      const haystack = [
+        p.short_name,
+        p.name,
+        p.product_name,
+        p.brand,
+        p.category,
+        p.part_category,
+        p.full_model_list,
+        p.model,
+        p.quality_variant
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      const cleanHaystack = haystack.replace(/[^a-z0-9]/g, '');
+      if (cleanTerm && cleanHaystack.includes(cleanTerm)) return true;
+      if (subTerms.length > 0 && subTerms.every((t) => haystack.includes(t))) return true;
+      return false;
     });
   }, [allCatalogList, data.products, modelPickerSearch]);
 
@@ -2514,7 +2528,10 @@ export default function StockPage({
             <SearchFilter
               placeholder="Search by model, brand, description, colour code, or supplier..."
               value={stockFilters.search}
-              onChange={(val) => setStockFilters(prev => ({ ...prev, search: val }))}
+              onChange={(val) => {
+                if (setStockPager) setStockPager((prev) => ({ ...prev, page: 1 }));
+                setStockFilters((prev) => ({ ...prev, search: val }));
+              }}
             />
           </div>
 

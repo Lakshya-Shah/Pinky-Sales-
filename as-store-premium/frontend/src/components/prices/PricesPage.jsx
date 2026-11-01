@@ -222,7 +222,7 @@ export default function PricesPage({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       onSearchChange(val);
-    }, 350);
+    }, 200);
   };
 
   const handleClearSearch = () => {
@@ -424,11 +424,13 @@ export default function PricesPage({
       }
     }
 
-    const query = String(search || '').trim();
+    const query = String(localSearch !== undefined ? localSearch : (search || '')).trim();
     if (!query) return result;
 
-    // Split query into lowercase individual search terms
+    // Split query into lowercase individual search terms and sub-delimiter tokens
     const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const subTerms = query.toLowerCase().split(/[\s,+/\\-]+/).filter(Boolean);
+    const cleanQuery = query.toLowerCase().replace(/[^a-z0-9]/g, '');
 
     return result.filter((product) => {
       // Build a searchable string combining all attributes
@@ -464,10 +466,20 @@ export default function PricesPage({
         .join(' ')
         .toLowerCase();
 
-      // Match if EVERY typed token is present in the haystack
-      return tokens.every((token) => searchableHaystack.includes(token));
+      const cleanHaystack = searchableHaystack.replace(/[^a-z0-9]/g, '');
+
+      // 1. Direct or normalized alphanumeric match
+      if (cleanQuery && cleanHaystack.includes(cleanQuery)) return true;
+
+      // 2. Match if EVERY whitespace token is present
+      if (tokens.length > 0 && tokens.every((token) => searchableHaystack.includes(token))) return true;
+
+      // 3. Match if EVERY delimiter sub-token is present (e.g. "v40/v30" matches "v30/v40" or reverse order)
+      if (subTerms.length > 0 && subTerms.every((term) => searchableHaystack.includes(term))) return true;
+
+      return false;
     });
-  }, [baseConsolidatedItems, selectedCategory, availableCategories, search]);
+  }, [baseConsolidatedItems, selectedCategory, availableCategories, search, localSearch]);
 
   // Pagination state for Prices page and category pages (tools, spares, battery, oca-glass, etc.)
   const [currentPage, setCurrentPage] = useState(() => Number(pager?.page) || 1);
@@ -489,7 +501,7 @@ export default function PricesPage({
   // Reset page to 1 when search query, selected category filter, or categoryType changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, selectedCategory, categoryType]);
+  }, [search, localSearch, selectedCategory, categoryType]);
 
   const totalItemsCount = consolidatedItems.length;
   const totalPagesCount = Math.max(1, Math.ceil(totalItemsCount / pageSize));

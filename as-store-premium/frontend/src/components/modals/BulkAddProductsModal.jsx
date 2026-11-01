@@ -104,7 +104,14 @@ export default function BulkAddProductsModal({
       if (!q) return true;
       const cleanTitle = getCleanTitle(p).toLowerCase();
       const haystack = (p.keywords || `${cleanTitle} ${p.brand} ${p.model} ${p.category} ${p.quality}`).toLowerCase();
-      return haystack.includes(q);
+      const cleanHaystack = haystack.replace(/[^a-z0-9]/g, '');
+      const cleanQ = q.replace(/[^a-z0-9]/g, '');
+      if (cleanQ && cleanHaystack.includes(cleanQ)) return true;
+      const tokens = q.split(/\s+/).filter(Boolean);
+      const subTerms = q.split(/[\s,+/\\-]+/).filter(Boolean);
+      if (tokens.length > 0 && tokens.every((t) => haystack.includes(t))) return true;
+      if (subTerms.length > 0 && subTerms.every((t) => haystack.includes(t))) return true;
+      return false;
     });
   }, [salesProductOptions, search, selectedCategory, inStockOnly]);
 

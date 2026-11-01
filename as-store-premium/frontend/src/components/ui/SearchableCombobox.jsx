@@ -154,6 +154,8 @@ function SearchableCombobox({
     const cleanQuery = rawSearch.replace(/[^a-z0-9]/g, '');
     const terms = rawSearch.split(/\s+/).filter(Boolean);
     const cleanTerms = terms.map((t) => t.replace(/[^a-z0-9]/g, '')).filter(Boolean);
+    const subTerms = rawSearch.split(/[\s,+/\\-]+/).filter(Boolean);
+    const cleanSubTerms = subTerms.map((t) => t.replace(/[^a-z0-9]/g, '')).filter(Boolean);
 
     const matches = [];
     const len = normalizedOptions.length;
@@ -174,8 +176,20 @@ function SearchableCombobox({
         continue;
       }
 
-      // 3. Clean alphanumeric match (e.g. "v 27" matches "v27")
+      // 3. Sub-delimiter multi-term match (e.g. "v40/v30" matches products with both "v40" and "v30" regardless of order)
+      if (subTerms.length > 1 && subTerms.every((st) => s.includes(st))) {
+        matches.push(opt);
+        continue;
+      }
+
+      // 4. Clean alphanumeric match (e.g. "v 27" matches "v27")
       if (cleanQuery && c.includes(cleanQuery)) {
+        matches.push(opt);
+        continue;
+      }
+
+      // 5. Clean sub-delimiter tokens match (e.g. "v40-v30" matches "v40" & "v30")
+      if (cleanSubTerms.length > 1 && cleanSubTerms.every((cst) => c.includes(cst))) {
         matches.push(opt);
         continue;
       }

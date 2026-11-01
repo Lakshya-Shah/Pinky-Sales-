@@ -1115,6 +1115,8 @@ const SaleItemRow = React.memo(function SaleItemRow({
   updateSaleItemColorQuantity,
   removeSaleItem,
   onQuantityEnter,
+  onSearchProduct,
+  isSearchingProducts,
 }) {
   const selectedProd = (data.products || []).find((p) => String(p.id || p.product_id) === String(item.product_id)) 
     || (data.productResults || []).find((p) => String(p.id || p.product_id) === String(item.product_id))
@@ -1176,6 +1178,8 @@ const SaleItemRow = React.memo(function SaleItemRow({
               }, 100);
             }}
             options={salesProductOptions}
+            onSearch={onSearchProduct}
+            loading={isSearchingProducts}
             placeholder="Search product, brand, model..."
             searchPlaceholder="Type model, OLED, battery..."
             dropdownWidth="min-w-full sm:min-w-[560px] md:min-w-[640px] max-w-[min(760px,96vw)]"
@@ -1531,6 +1535,8 @@ function SalesCreationWorkspace({
   needsSpecificShop,
   salesProductOptions,
   sellingPriceOptions,
+  onSearchProduct,
+  isSearchingProducts,
   updateSaleItemProduct,
   updateSaleItemCustomName,
   updateSaleItemCustomBrand,
@@ -2101,6 +2107,8 @@ function SalesCreationWorkspace({
                   idx={idx}
                   itemsLength={items.length}
                   salesProductOptions={salesProductOptions}
+                  onSearchProduct={onSearchProduct}
+                  isSearchingProducts={isSearchingProducts}
                   data={data}
                   getProductAvailableColors={getProductAvailableColors}
                   updateSaleItemProduct={updateSaleItemProduct}
@@ -3251,6 +3259,11 @@ function App() {
   const deferredPendingFilters = useDeferredValue(pendingFilters);
   const deferredPriceSearch = useDeferredValue(priceSearch);
   const deferredModelSearch = useDeferredValue(modelSearch);
+  const deferredToolsSearch = useDeferredValue(toolsSearch);
+  const deferredSparesSearch = useDeferredValue(sparesSearch);
+  const deferredBatterySearch = useDeferredValue(batterySearch);
+  const deferredOcaSearch = useDeferredValue(ocaSearch);
+  const deferredOtherCategorySearch = useDeferredValue(otherCategorySearch);
   const [productPager, setProductPager] = useState(() => createPager(50));
   const [stockPager, setStockPager] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -3592,7 +3605,21 @@ function App() {
   const showGlobalSearch = active === 'dashboard';
   const needsSpecificShop = role === 'superadmin' && !shopId;
   const shopCountDependency = active === 'stock' ? data.shops.length : 0;
-  const activeProductSearch = active === 'prices' ? deferredPriceSearch : active === 'models' ? deferredModelSearch : '';
+  const activeProductSearch = active === 'prices'
+    ? deferredPriceSearch
+    : active === 'models'
+      ? deferredModelSearch
+      : active === 'tools'
+        ? deferredToolsSearch
+        : active === 'spares'
+          ? deferredSparesSearch
+          : active === 'battery'
+            ? deferredBatterySearch
+            : active === 'oca-glass'
+              ? deferredOcaSearch
+              : active === 'other-category'
+                ? deferredOtherCategorySearch
+                : '';
 
   const syncActivePath = (page, mode = 'push', queryString = '') => {
     if (typeof window === 'undefined') return;
@@ -3813,6 +3840,11 @@ function App() {
   const productSearchForTab = (tab = active) => {
     if (tab === 'prices') return priceSearch;
     if (tab === 'models') return modelSearch;
+    if (tab === 'tools') return toolsSearch;
+    if (tab === 'spares') return sparesSearch;
+    if (tab === 'battery') return batterySearch;
+    if (tab === 'oca-glass') return ocaSearch;
+    if (tab === 'other-category') return otherCategorySearch;
     return '';
   };
 
@@ -3971,7 +4003,7 @@ function App() {
       if (filters?.status) params.set('status', filters.status);
 
       const salesCustParams = scopedParams(currentShop);
-      salesCustParams.set('limit', '1000');
+      salesCustParams.set('limit', '5000');
 
       const [response, salesCustResponse] = await Promise.all([
         authedFetch(`/customers?${params.toString()}`),
@@ -4027,17 +4059,32 @@ function App() {
       if (filters?.date) params.set('date', filters.date);
 
       if (hideSales && !hasSearch) {
-        setData((prev) => ({ ...prev, sales: [] }));
+        const dependencyParams = scopedParams(saleLocation);
+        dependencyParams.set('page', '1');
+        dependencyParams.set('limit', '5000');
+        const [stockResponse, customerResponse, productsResponse] = await Promise.all([
+          authedFetch(`/stock?${dependencyParams.toString()}`),
+          authedFetch(`/customers?${dependencyParams.toString()}`),
+          authedFetch(`/products?limit=5000`),
+        ]);
+        const prodRows = getPaginatedRows(productsResponse);
+        setData((prev) => ({
+          ...prev,
+          sales: [],
+          stock: getPaginatedRows(stockResponse),
+          customers: getPaginatedRows(customerResponse),
+          products: prodRows.length > 0 ? prodRows : prev.products,
+        }));
         return;
       }
       const dependencyParams = scopedParams(saleLocation);
       dependencyParams.set('page', '1');
-      dependencyParams.set('limit', '1000');
+      dependencyParams.set('limit', '5000');
       const [stockResponse, customerResponse, salesResponse, productsResponse] = await Promise.all([
         authedFetch(`/stock?${dependencyParams.toString()}`),
         authedFetch(`/customers?${dependencyParams.toString()}`),
         authedFetch(`/sales?${params.toString()}`),
-        authedFetch(`/products?limit=1000`),
+        authedFetch(`/products?limit=5000`),
       ]);
       const salesRows = getPaginatedRows(salesResponse);
       const prodRows = getPaginatedRows(productsResponse);
@@ -4575,11 +4622,11 @@ function App() {
   }, [active, selectedShop, session?.token, authReady, shopCountDependency]);
 
   useEffect(() => {
-    if (!session || !authReady || role === 'customer' || !['models', 'prices'].includes(active)) return;
-    // Debounce search query by 350ms to eliminate redundant network roundtrips while typing
+    if (!session || !authReady || role === 'customer' || !['models', 'prices', 'tools', 'spares', 'battery', 'oca-glass', 'other-category'].includes(active)) return;
+    // Debounce search query by 200ms to eliminate redundant network roundtrips while typing
     const timer = setTimeout(() => {
       loadProductPage({ tab: active, page: productPager.page, search: activeProductSearch, currentShop: shopId });
-    }, activeProductSearch ? 350 : 0);
+    }, activeProductSearch ? 200 : 0);
     return () => clearTimeout(timer);
   }, [active, activeProductSearch, selectedShop, productPager.page, productPager.limit, session?.token, authReady]);
 
@@ -4609,6 +4656,39 @@ function App() {
     }, 200);
     return () => clearTimeout(timer);
   }, [globalSearch, token, shopId, role]);
+
+  // Live remote product search for sales combobox so ANY model in database can be added to sales
+  const [isSearchingSalesProducts, setIsSearchingSalesProducts] = useState(false);
+  const salesProductSearchTimerRef = useRef(null);
+  const handleSearchSalesProducts = useCallback((query) => {
+    const q = String(query || '').trim();
+    if (!q || !token) return;
+    if (salesProductSearchTimerRef.current) clearTimeout(salesProductSearchTimerRef.current);
+    setIsSearchingSalesProducts(true);
+    salesProductSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const saleLocation = shopId || (role === 'shopkeeper' ? session?.shop_id : '');
+        const scoped = saleLocation ? `&shop_id=${encodeURIComponent(saleLocation)}` : '';
+        const res = await authedFetch(`/products?search=${encodeURIComponent(q)}&limit=50${scoped}`);
+        const rows = getPaginatedRows(res);
+        if (Array.isArray(rows) && rows.length > 0) {
+          setData((prev) => {
+            const existingIds = new Set((prev.products || []).map((p) => String(p.id || p.product_id)));
+            const newProducts = rows.filter((r) => !existingIds.has(String(r.id || r.product_id)));
+            if (!newProducts.length) return prev;
+            return {
+              ...prev,
+              products: [...(prev.products || []), ...newProducts],
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Live sales product search failed:', err);
+      } finally {
+        setIsSearchingSalesProducts(false);
+      }
+    }, 200);
+  }, [shopId, role, session?.shop_id, token]);
 
   const initialStockFilterMountedRef = useRef(false);
   const initialShopMountedRef = useRef(false);
@@ -4719,6 +4799,11 @@ function App() {
   }, [deferredPendingFilters]);
 
   useEffect(() => {
+    if (active !== 'stock') return;
+    setStockPager((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+  }, [deferredStockFilters]);
+
+  useEffect(() => {
     if (!session || !authReady || role === 'customer' || active !== 'stock') return;
     loadStockPage({
       stockPage: stockPager.page,
@@ -4742,8 +4827,7 @@ function App() {
   }, [active, selectedShop, deferredCustomerFilters, customerPager.page, customerPager.limit, session?.token, authReady, hideCustomers]);
 
   useEffect(() => {
-    const hasSearch = Boolean(deferredSalesFilters?.search?.trim() || deferredSalesFilters?.date);
-    if (!session || !authReady || role === 'customer' || active !== 'sales' || (hideSales && !hasSearch)) return;
+    if (!session || !authReady || role === 'customer' || active !== 'sales') return;
     loadSalesPage({ page: salesPager.page, filters: deferredSalesFilters });
   }, [active, selectedShop, deferredSalesFilters, salesPager.page, salesPager.limit, session?.token, authReady, hideSales]);
 
@@ -7708,13 +7792,17 @@ function App() {
 
     const rawSearch = searchQuery.toLowerCase().trim();
     const tokens = rawSearch.split(/\s+/).filter(Boolean);
+    const subTerms = rawSearch.split(/[\s,+/\\-]+/).filter(Boolean);
     const cleanSearch = rawSearch.replace(/[^a-z0-9]/g, '');
 
-    // 1. Match if EVERY typed token is present in the haystack
-    if (tokens.every((token) => product._searchHaystack.includes(token))) return true;
-
-    // 2. Normalized alphanumeric match (e.g. "v 27" matches "v27")
+    // 1. Normalized alphanumeric match (e.g. "v 27" matches "v27")
     if (cleanSearch && product._cleanHaystack.includes(cleanSearch)) return true;
+
+    // 2. Match if EVERY typed whitespace token is present in the haystack
+    if (tokens.length > 0 && tokens.every((token) => product._searchHaystack.includes(token))) return true;
+
+    // 3. Match if EVERY delimiter sub-token is present (e.g. "v40/v30" matches "v30/v40" or reverse order)
+    if (subTerms.length > 0 && subTerms.every((term) => product._searchHaystack.includes(term))) return true;
 
     return false;
   };
@@ -7833,14 +7921,16 @@ function App() {
     let list = data.sales || [];
     const q = (salesFilters.search || '').trim().toLowerCase();
     if (q) {
+      const subTerms = q.split(/[\s,+/\\-]+/).filter(Boolean);
       list = list.filter((s) => {
         const inv = String(s.invoice_number || '').toLowerCase();
         const cust = String(s.customer_name || '').toLowerCase();
         const mobile = String(s.mobile || '').toLowerCase();
         const shop = String(s.shop_name || '').toLowerCase();
-        const itemsMatch = (s.items || []).some((it) =>
-          String(it.product_name || it.name || it.short_name || '').toLowerCase().includes(q)
-        );
+        const itemsMatch = (s.items || []).some((it) => {
+          const itemText = String(it.product_name || it.name || it.short_name || '').toLowerCase();
+          return itemText.includes(q) || (subTerms.length > 0 && subTerms.every((term) => itemText.includes(term)));
+        });
         return inv.includes(q) || cust.includes(q) || mobile.includes(q) || shop.includes(q) || itemsMatch;
       });
     }
@@ -9033,7 +9123,7 @@ function App() {
                 pager={productPager}
                 loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('tools', {}, exportItems || toolsItems)}
-                onSearchChange={(value) => setToolsSearch(value)}
+                onSearchChange={(value) => { setProductPager((prev) => ({ ...prev, page: 1 })); setToolsSearch(value); }}
                 onViewDetails={setSelectedProductDetails}
                 onEditProduct={editProduct}
                 onCloneProduct={cloneProduct}
@@ -9063,7 +9153,7 @@ function App() {
                 pager={productPager}
                 loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('spares', {}, exportItems || sparesItems)}
-                onSearchChange={(value) => setSparesSearch(value)}
+                onSearchChange={(value) => { setProductPager((prev) => ({ ...prev, page: 1 })); setSparesSearch(value); }}
                 onViewDetails={setSelectedProductDetails}
                 onEditProduct={editProduct}
                 onCloneProduct={cloneProduct}
@@ -9092,7 +9182,7 @@ function App() {
                 search={batterySearch}
                 loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('battery', {}, exportItems || batteryItems)}
-                onSearchChange={(value) => setBatterySearch(value)}
+                onSearchChange={(value) => { setProductPager((prev) => ({ ...prev, page: 1 })); setBatterySearch(value); }}
                 onViewDetails={setSelectedProductDetails}
                 onEditProduct={editProduct}
                 onCloneProduct={cloneProduct}
@@ -9121,7 +9211,7 @@ function App() {
                 search={ocaSearch}
                 loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('oca-glass', {}, exportItems || ocaGlassItems)}
-                onSearchChange={(value) => setOcaSearch(value)}
+                onSearchChange={(value) => { setProductPager((prev) => ({ ...prev, page: 1 })); setOcaSearch(value); }}
                 onViewDetails={setSelectedProductDetails}
                 onEditProduct={editProduct}
                 onCloneProduct={cloneProduct}
@@ -9150,7 +9240,7 @@ function App() {
                 search={otherCategorySearch}
                 loading={productPageLoading}
                 onExportProducts={(exportItems) => exportExcel('other-category', {}, exportItems || otherCategoryItems)}
-                onSearchChange={(value) => setOtherCategorySearch(value)}
+                onSearchChange={(value) => { setProductPager((prev) => ({ ...prev, page: 1 })); setOtherCategorySearch(value); }}
                 onViewDetails={setSelectedProductDetails}
                 onEditProduct={editProduct}
                 onCloneProduct={cloneProduct}
@@ -9588,6 +9678,8 @@ function App() {
                     saving={saving}
                     needsSpecificShop={needsSpecificShop}
                     salesProductOptions={salesProductOptions}
+                    onSearchProduct={handleSearchSalesProducts}
+                    isSearchingProducts={isSearchingSalesProducts}
                     sellingPriceOptions={sellingPriceOptions}
                     updateSaleItemProduct={updateSaleItemProduct}
                     updateSaleItemCustomName={updateSaleItemCustomName}

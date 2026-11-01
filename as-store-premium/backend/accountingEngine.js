@@ -283,11 +283,14 @@ export async function reverseJournal(tx, refType, refId, shopId, entryDate, crea
 
     // Mirror each line (swap debit/credit)
     for (const line of lines) {
+      const revDebit = Math.round(Number(line.credit || 0) * 100) / 100;
+      const revCredit = Math.round(Number(line.debit || 0) * 100) / 100;
+      if (revDebit <= 0 && revCredit <= 0) continue;
       await insertJournalLine(tx, {
         journalEntryId: reversalJeId,
         accountId: line.account_id,
-        debit:  Number(line.credit || 0),   // original credit becomes debit
-        credit: Number(line.debit  || 0),   // original debit becomes credit
+        debit:  revDebit,
+        credit: revCredit,
         entityType: line.entity_type,
         entityId:   line.entity_id,
         narration: `Reversal: ${line.narration || ''}`,
