@@ -4121,11 +4121,21 @@ app.post('/api/customers', authenticateToken, requireShopStaff, async (req, res)
       [shopId, cleanName, cleanMobile, cleanAddress, cleanNotes, cleanGstin, cleanType, cleanOpeningBalance, cleanOpeningBalanceDate, req.user.id]
     );
 
-    if (cleanOpeningBalance > 0) {
+    if (cleanOpeningBalance !== 0) {
+      const isDebit = cleanOpeningBalance > 0;
       await runQuery(
         `INSERT INTO ledger_entries (shop_id, customer_id, entry_type, ref_no, entry_date, debit, credit, description, created_by)
-         VALUES (?, ?, 'OPENING_BALANCE', ?, ?, ?, 0.00, ?, ?)`,
-        [shopId, result.id, `OB-${String(result.id).padStart(6, '0')}`, cleanOpeningBalanceDate, cleanOpeningBalance, `Opening Balance for ${cleanName}`, req.user.id]
+         VALUES (?, ?, 'OPENING_BALANCE', ?, ?, ?, ?, ?, ?)`,
+        [
+          shopId,
+          result.id,
+          `OB-${String(result.id).padStart(6, '0')}`,
+          cleanOpeningBalanceDate,
+          isDebit ? cleanOpeningBalance : 0.00,
+          !isDebit ? Math.abs(cleanOpeningBalance) : 0.00,
+          isDebit ? `Opening Balance for ${cleanName}` : `Opening Balance (Advance Credit) for ${cleanName}`,
+          req.user.id
+        ]
       );
     }
 
@@ -4177,24 +4187,28 @@ app.put(['/api/customers/:id', '/customers/:id'], authenticateToken, requireShop
     );
 
     // Sync ledger_entries for OPENING_BALANCE
-    if (cleanOpeningBalance > 0) {
+    if (cleanOpeningBalance !== 0) {
+      const isDebit = cleanOpeningBalance > 0;
+      const debitAmt = isDebit ? cleanOpeningBalance : 0.00;
+      const creditAmt = !isDebit ? Math.abs(cleanOpeningBalance) : 0.00;
+      const desc = isDebit ? `Opening Balance for ${cleanName}` : `Opening Balance (Advance Credit) for ${cleanName}`;
       const existingOB = await getRecord(
         'SELECT id FROM ledger_entries WHERE customer_id = ? AND entry_type = ?',
         [customerId, 'OPENING_BALANCE']
       );
       if (existingOB) {
         await runQuery(
-          'UPDATE ledger_entries SET debit = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [cleanOpeningBalance, `Opening Balance for ${cleanName}`, existingOB.id]
+          'UPDATE ledger_entries SET debit = ?, credit = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [debitAmt, creditAmt, desc, existingOB.id]
         );
       } else {
         await runQuery(
           `INSERT INTO ledger_entries (shop_id, customer_id, entry_type, ref_no, entry_date, debit, credit, description, created_by)
-           VALUES (?, ?, 'OPENING_BALANCE', ?, ?, ?, 0.00, ?, ?)`,
-          [customer.shop_id, customerId, `OB-${String(customerId).padStart(6, '0')}`, customer.opening_balance_date || today(), cleanOpeningBalance, `Opening Balance for ${cleanName}`, req.user.id]
+           VALUES (?, ?, 'OPENING_BALANCE', ?, ?, ?, ?, ?, ?)`,
+          [customer.shop_id, customerId, `OB-${String(customerId).padStart(6, '0')}`, customer.opening_balance_date || today(), debitAmt, creditAmt, desc, req.user.id]
         );
       }
-    } else if (cleanOpeningBalance === 0) {
+    } else {
       await runQuery(
         'DELETE FROM ledger_entries WHERE customer_id = ? AND entry_type = ?',
         [customerId, 'OPENING_BALANCE']

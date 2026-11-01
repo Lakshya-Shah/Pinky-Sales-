@@ -189,7 +189,7 @@ async function fetchCustomerLedgerTransactions(customerId, shopId) {
   );
 
   const leOb = await getRecord(
-    `SELECT id, debit, entry_date, ref_no, description, created_at 
+    `SELECT id, debit, credit, entry_date, ref_no, description, created_at 
      FROM ledger_entries 
      WHERE customer_id = ? AND entry_type = 'OPENING_BALANCE' 
      ORDER BY id ASC LIMIT 1`,
@@ -197,8 +197,17 @@ async function fetchCustomerLedgerTransactions(customerId, shopId) {
   );
 
   const obRows = [];
-  const obAmount = leOb ? Number(leOb.debit) : Number(cust?.ob || 0);
-  if (obAmount > 0) {
+  let rawOb = 0;
+  if (leOb) {
+    if (Number(leOb.debit) > 0) rawOb = Number(leOb.debit);
+    else if (Number(leOb.credit) > 0) rawOb = -Number(leOb.credit);
+    else rawOb = Number(cust?.ob || 0);
+  } else {
+    rawOb = Number(cust?.ob || 0);
+  }
+  const obAmount = money(rawOb);
+
+  if (obAmount !== 0) {
     // Ensure Opening Balance date precedes or equals the earliest transaction date
     const earliestTx = await getRecord(
       `SELECT MIN(LEAST(
@@ -208,11 +217,11 @@ async function fetchCustomerLedgerTransactions(customerId, shopId) {
       [customerId, customerId]
     );
 
-    let effectiveObDate = leOb?.entry_date || cust?.ob_date;
+    let effectiveObDate = toDateKey(leOb?.entry_date || cust?.ob_date);
     if (earliestTx?.earliest_date) {
-      const edStr = new Date(earliestTx.earliest_date).toISOString().slice(0, 10);
-      const obStr = new Date(effectiveObDate).toISOString().slice(0, 10);
-      if (edStr < obStr) {
+      const edStr = toDateKey(earliestTx.earliest_date);
+      const obStr = toDateKey(effectiveObDate);
+      if (edStr && obStr && edStr < obStr) {
         effectiveObDate = edStr;
       }
     }
@@ -223,10 +232,10 @@ async function fetchCustomerLedgerTransactions(customerId, shopId) {
       created_at: '1970-01-01T00:00:00Z', // Guarantees opening balance precedes same-day tx
       ref_no: leOb?.ref_no || ('OB-' + String(customerId).padStart(6, '0')),
       entry_type: 'opening_balance',
-      description: leOb?.description || 'Opening Balance',
+      description: leOb?.description || (obAmount < 0 ? 'Opening Balance (Advance Credit)' : 'Opening Balance'),
       allocation_breakdown: null,
-      debit_amount: money(obAmount),
-      credit_amount: 0.00,
+      debit_amount: obAmount > 0 ? obAmount : 0.00,
+      credit_amount: obAmount < 0 ? Math.abs(obAmount) : 0.00,
       reversed: false,
       reversed_at: null,
     });
@@ -507,11 +516,11 @@ export async function getVendorLedger(supplierId, shopId, { from, to } = {}) {
         COALESCE(s.opening_balance_date, s.created_at::date, CURRENT_DATE) AS entry_date,
         'OB-' || LPAD(s.id::text, 6, '0')                                 AS ref_no,
         'opening_balance'                                                  AS entry_type,
-        'Opening Balance'                                                  AS description,
-        COALESCE(s.opening_balance, 0)::numeric                            AS debit_amount,
-        0.00::numeric                                                      AS credit_amount
+        CASE WHEN COALESCE(s.opening_balance, 0) < 0 THEN 'Opening Balance (Advance Credit)' ELSE 'Opening Balance' END AS description,
+        CASE WHEN COALESCE(s.opening_balance, 0) > 0 THEN COALESCE(s.opening_balance, 0)::numeric ELSE 0.00::numeric END AS debit_amount,
+        CASE WHEN COALESCE(s.opening_balance, 0) < 0 THEN ABS(COALESCE(s.opening_balance, 0))::numeric ELSE 0.00::numeric END AS credit_amount
       FROM suppliers s
-      WHERE s.id = ? AND COALESCE(s.opening_balance, 0) > 0
+      WHERE s.id = ? AND COALESCE(s.opening_balance, 0) != 0
 
       UNION ALL
 

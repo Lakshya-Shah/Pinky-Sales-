@@ -384,8 +384,9 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
         reason: String(row.description || '').replace(/^Credit Note #CN-\d+\s*\((.*)\)$/, '$1'),
       });
     } else if (row.entry_type === 'opening_balance') {
+      const rawAmt = row.debit > 0 ? row.debit : (row.credit > 0 ? -row.credit : (ledger?.opening_balance || ''));
       setEditFormData({
-        amount: String(ledger?.opening_balance || row.debit || ''),
+        amount: String(rawAmt),
         opening_balance_date: row.entry_date || today(),
       });
     } else if (row.entry_type === 'purchase_bill') {
@@ -701,7 +702,13 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 20 }}>
           {[
-            ...(Number(ledger.opening_balance || 0) > 0 ? [{ label: 'Opening Balance', value: Number(ledger.opening_balance), icon: <BookOpen size={16} />, color: '#d97706', bg: '#fffbeb' }] : []),
+            ...(Number(ledger.opening_balance || 0) !== 0 ? [{
+              label: Number(ledger.opening_balance || 0) < 0 ? 'Opening (Advance Cr)' : 'Opening Balance',
+              value: Math.abs(Number(ledger.opening_balance)),
+              icon: <BookOpen size={16} />,
+              color: Number(ledger.opening_balance || 0) < 0 ? '#2563eb' : '#d97706',
+              bg: Number(ledger.opening_balance || 0) < 0 ? '#eff6ff' : '#fffbeb'
+            }] : []),
             { label: 'Total Debit (Dr)', value: totalDebit, icon: <ArrowUpRight size={16} />, color: '#dc2626', bg: '#fef2f2' },
             { label: 'Total Credit (Cr)', value: totalCredit, icon: <ArrowDownRight size={16} />, color: '#16a34a', bg: '#dcfce7' },
             { label: 'Closing Balance', value: closingBal, icon: <ChevronsRight size={16} />, color: closingBal > 0 ? '#b45309' : '#16a34a', bg: closingBal > 0 ? '#fef3c7' : '#dcfce7' },
@@ -1085,7 +1092,7 @@ export default function PartyLedger({ session, api, setGlobalToast, customers = 
                       <input
                         type="number"
                         step="any"
-                        min="0"
+                        min={editingRow?.entry_type === 'opening_balance' ? undefined : "0"}
                         required
                         autoFocus
                         value={editFormData.amount ?? ''}
